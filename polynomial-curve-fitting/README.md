@@ -1,37 +1,32 @@
-# Interactive Polynomial Curve Fitting
+# Polynomial Curve Fitting
 
-An interactive visualization of polynomial curve fitting designed to
-demonstrate how increasing model complexity affects the fitting of noisy
-observations.
+An interactive visualization for demonstrating **polynomial curve fitting
+and the effect of increasing model complexity on noisy observations**.
 
-The project provides **two outputs**:
+The program generates noisy observations from a known sine function,
+fits polynomial models of increasing degree, and visualizes how the fitted
+curve changes from a simple model to increasingly complex models.
 
-1. A standalone interactive HTML animation with a polynomial-degree slider.
-2. A high-quality MP4 video showing the progression from degree 1 to
-   degree 30.
+Two outputs are generated:
 
-The visualization is intended as an educational tool for explaining
-polynomial regression, model complexity, underfitting, overfitting, and
-training error.
+- An interactive HTML visualization with a polynomial-degree slider.
+- A high-quality MP4 video showing the progression from degree 1 to
+  degree 30.
 
 ---
 
-## 1. Concept
+## Overview
 
-Suppose we observe data generated from an unknown relationship.
-
-In this visualization, the underlying true function is:
+The underlying relationship used in this demonstration is:
 
 \[
 y = \sin(x)
 \]
 
-However, the observations contain random noise.
+A finite set of observations is sampled from this function and Gaussian
+noise is added to simulate observed data.
 
-The objective is to fit polynomial models of increasing degree to these
-noisy observations.
-
-A polynomial model of degree \(d\) can be written as:
+Polynomial models are then fitted to the noisy observations:
 
 \[
 \hat{y}
@@ -39,37 +34,61 @@ A polynomial model of degree \(d\) can be written as:
 w_0 + w_1x + w_2x^2 + \cdots + w_dx^d
 \]
 
-The project demonstrates what happens as the degree of the polynomial
-increases.
+where \(d\) is the polynomial degree.
+
+The program fits models from:
+
+\[
+d=1
+\]
+
+through:
+
+\[
+d=30
+\]
+
+and allows the effect of increasing polynomial degree to be observed
+visually.
 
 ---
 
-## 2. Data Generation
+## What the Visualization Shows
 
-The visualization generates **50 observations** between \(0\) and
-\(2\pi\).
+The visualization contains three main elements:
 
-The true function is:
+1. **True function**  
+   The original \(y=\sin(x)\) function.
 
-\[
-y = \sin(x)
-\]
+2. **Noisy observations**  
+   The sampled observations after Gaussian noise has been added.
 
-Random Gaussian noise is then added to the true function:
+3. **Polynomial fit**  
+   The polynomial fitted to the noisy observations for the currently
+   selected degree.
 
-\[
-y_{\text{observed}}
-=
-\sin(x) + \epsilon
-\]
+As the polynomial degree increases, the model becomes increasingly
+flexible.
 
-where:
-
-\[
-\epsilon \sim \mathcal{N}(0,\sigma^2)
-\]
-
-The current noise level is:
+This provides a visual demonstration of the progression:
 
 ```text
-Noise standard deviation = 0.50
+Low-degree model
+       ↓
+Limited flexibility
+       ↓
+Underfitting
+
+Increasing degree
+       ↓
+Greater flexibility
+       ↓
+Improved fit to observations
+
+High-degree model
+       ↓
+Very high flexibility
+       ↓
+May begin fitting noise
+       ↓
+Potential overfitting
