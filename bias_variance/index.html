@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bias vs Variance - Sine Curve Demo</title>
+
+  <!-- Python in the browser -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 14px;
+      background: #f1f1f1;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #111;
+    }
+
+    .panel {
+      max-width: 1500px;
+      margin: 0 auto 14px auto;
+      background: #fff;
+      padding: 16px 18px;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+    }
+
+    .controls {
+      display: flex;
+      align-items: end;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    label {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    input, select, button {
+      height: 36px;
+      border-radius: 5px;
+      font-size: 14px;
+      padding: 0 10px;
+    }
+
+    input, select {
+      border: 1px solid #aaa;
+      background: white;
+    }
+
+    button {
+      border: none;
+      background: #292929;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+      min-width: 112px;
+    }
+
+    button:hover { background: #111; }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    #resetBtn { background: #833b3b; }
+    #playBtn { background: #555; }
+    #zoomBtn { background: #285f78; min-width: 150px; }
+
+    #functionSelect { width: 130px; }
+    #numPoints { width: 130px; }
+    #noise { width: 100px; }
+    #experiments { width: 130px; }
+    #biasDegree { width: 110px; }
+    #varianceDegree { width: 125px; }
+    #seed { width: 115px; }
+    #speed { width: 90px; }
+
+    .second-row {
+      margin-top: 13px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .check-wrap {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .check-wrap input {
+      width: 16px;
+      height: 16px;
+    }
+
+    #status {
+      margin-left: auto;
+      font-size: 14px;
+      font-weight: 700;
+      color: #444;
+    }
+
+    .graphs {
+      max-width: 1500px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .graph-card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+      padding: 12px;
+      min-width: 0;
+    }
+
+    .graph-title {
+      text-align: center;
+      font-size: 18px;
+      font-weight: 700;
+      margin: 3px 0 8px;
+    }
+
+    .graph-subtitle {
+      text-align: center;
+      margin: -3px 0 8px;
+      font-size: 13px;
+      color: #555;
+    }
+
+    .plot {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: white;
+    }
+
+    #loading {
+      max-width: 1500px;
+      margin: 20px auto;
+      padding: 50px;
+      text-align: center;
+      font-weight: bold;
+      color: #555;
+    }
+
+    .explanation {
+      max-width: 1500px;
+      margin: 14px auto 0;
+      padding: 14px 18px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.10);
+      font-size: 13px;
+      line-height: 1.5;
+      color: #444;
+    }
+
+    @media (max-width: 900px) {
+      .graphs { grid-template-columns: 1fr; }
+      #status { width: 100%; margin-left: 0; }
+    }
+
+    @media (max-width: 650px) {
+      .field,
+      .field input,
+      .field select {
+        width: 100% !important;
+      }
+
+      button {
+        flex: 1 1 140px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="panel">
+    <div class="controls">
+
+      <div class="field">
+        <label>True Function</label>
+        <select id="functionSelect" disabled>
+          <option>sin(x)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Data Points</label>
+        <input id="numPoints" type="number" value="25" min="5" max="500">
+      </div>
+
+      <div class="field">
+        <label>Noise Level</label>
+        <input id="noise" type="number" value="0.30" min="0" max="3" step="0.05">
+      </div>
+
+      <div class="field">
+        <label>Experiments</label>
+        <input id="experiments" type="number" value="10" min="1" max="100">
+      </div>
+
+      <div class="field">
+        <label>Bias Degree</label>
+        <input id="biasDegree" type="number" value="1" min="1" max="5">
+      </div>
+
+      <div class="field">
+        <label>Variance Degree</label>
+        <input id="varianceDegree" type="number" value="10" min="2" max="18">
+      </div>
+
+      <div class="field">
+        <label>Random Seed</label>
+        <input id="seed" type="number" value="42">
+      </div>
+
+      <button id="applyBtn">Apply Settings</button>
+      <button id="nextBtn">Next Sample</button>
+      <button id="playBtn">▶ Play</button>
+      <button id="resetBtn">Reset</button>
+      <button id="zoomBtn">🔍 View: Normal</button>
+
+    </div>
+
+    <div class="second-row">
+
+      <div class="field">
+        <label>Speed</label>
+        <select id="speed">
+          <option value="1300">0.5×</option>
+          <option value="700" selected>1×</option>
+          <option value="350">2×</option>
+          <option value="120">5×</option>
+        </select>
+      </div>
+
+      <label class="check-wrap">
+        <input id="showPoints" type="checkbox" checked>
+        Show current sample points
+      </label>
+
+      <label class="check-wrap">
+        <input id="sameData" type="checkbox" checked>
+        Use same sample for both graphs
+      </label>
+
+      <div id="status">Loading Python...</div>
+    </div>
+  </div>
+
+  <div id="loading">Loading NumPy and Matplotlib...</div>
+
+  <div class="graphs" id="graphs" style="display:none;">
+
+    <div class="graph-card">
+      <div class="graph-title">High Bias / Underfitting</div>
+      <div class="graph-subtitle">
+        Low-degree model: different datasets produce similar simple fitted lines
+      </div>
+      <img id="biasPlot" class="plot" alt="Bias graph">
+    </div>
+
+    <div class="graph-card">
+      <div class="graph-title">High Variance / Overfitting</div>
+      <div class="graph-subtitle">
+        High-degree model: small data changes produce noticeably different fitted curves
+      </div>
+      <img id="variancePlot" class="plot" alt="Variance graph">
+    </div>
+
+  </div>
+
+  <div class="explanation">
+    <b>Synchronization:</b> Every click on <b>Next Sample</b> creates one new noisy
+    dataset. By default, the exact same dataset is used for both the bias model and
+    the variance model. Old sample points are removed, but the previously fitted
+    lines/curves remain. Therefore experiment 1 shows one model in each graph,
+    experiment 2 shows two, experiment 3 shows three, and so on. Use the <b>View</b> button to cycle through Normal, Zoom In, and Zoom Out without changing the current experiment.
+  </div>
+
+<script>
+  let pyodide = null;
+  let playing = false;
+  let currentRun = 0;
+
+  // One button cycles through:
+  // 0 = normal, 1 = zoom in, 2 = zoom out
+  let zoomMode = 0;
+
+  const zoomLabels = [
+    "🔍 View: Normal",
+    "🔍 View: Zoom In",
+    "🔍 View: Zoom Out"
+  ];
+
+  function getSettings() {
+    return {
+      n: Math.max(5, parseInt(document.getElementById("numPoints").value || "25")),
+      noise: Math.max(0, parseFloat(document.getElementById("noise").value || "0.30")),
+      experiments: Math.max(1, parseInt(document.getElementById("experiments").value || "10")),
+      biasDegree: Math.max(1, parseInt(document.getElementById("biasDegree").value || "1")),
+      varianceDegree: Math.max(2, parseInt(document.getElementById("varianceDegree").value || "10")),
+      seed: parseInt(document.getElementById("seed").value || "42"),
+      showPoints: document.getElementById("showPoints").checked,
+      sameData: document.getElementById("sameData").checked
+    };
+  }
+
+  function setBusy(value) {
+    document.getElementById("applyBtn").disabled = value;
+    document.getElementById("nextBtn").disabled = value;
+    document.getElementById("resetBtn").disabled = value;
+    document.getElementById("zoomBtn").disabled = value;
+
+    if (!playing) {
+      document.getElementById("playBtn").disabled = value;
+    }
+  }
+
+  function updatePlots(result) {
+    const data = JSON.parse(result);
+
+    document.getElementById("biasPlot").src = data.bias_image;
+    document.getElementById("variancePlot").src = data.variance_image;
+
+    currentRun = data.run;
+
+    let status = `Experiment ${data.run}`;
+
+    if (data.bias_formula) {
+      status += ` | Bias: ${data.bias_formula}`;
+    }
+
+    if (data.variance_degree) {
+      status += ` | Variance degree: ${data.variance_degree}`;
+    }
+
+    document.getElementById("status").textContent = status;
+
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("graphs").style.display = "grid";
+  }
+
+  function sendSettingsToPython() {
+    const s = getSettings();
+
+    pyodide.globals.set("js_n", s.n);
+    pyodide.globals.set("js_noise", s.noise);
+    pyodide.globals.set("js_bias_degree", s.biasDegree);
+    pyodide.globals.set("js_variance_degree", s.varianceDegree);
+    pyodide.globals.set("js_seed", s.seed);
+    pyodide.globals.set("js_show_points", s.showPoints);
+    pyodide.globals.set("js_same_data", s.sameData);
+    pyodide.globals.set("js_zoom_mode", zoomMode);
+  }
+
+  async function applySettings() {
+    if (!pyodide) return;
+
+    playing = false;
+    document.getElementById("playBtn").textContent = "▶ Play";
+
+    setBusy(true);
+    sendSettingsToPython();
+
+    try {
+      const result = pyodide.runPython(`
+reset_state(
+    int(js_n),
+    float(js_noise),
+    int(js_bias_degree),
+    int(js_variance_degree),
+    int(js_seed),
+    bool(js_show_points),
+    int(js_zoom_mode)
+)
+      `);
+
+      updatePlots(result);
+      document.getElementById("status").textContent =
+        "Ready — click Next Sample or Play";
+    }
+    finally {
+      setBusy(false);
+    }
+  }
+
+  async function nextSample() {
+    if (!pyodide || playing) return;
+
+    setBusy(true);
+    sendSettingsToPython();
+
+    try {
+      const result = pyodide.runPython(`
+next_experiment(
+    int(js_n),
+    float(js_noise),
+    int(js_bias_degree),
+    int(js_variance_degree),
+    int(js_seed),
+    bool(js_show_points),
+    bool(js_same_data),
+    int(js_zoom_mode)
+)
+      `);
+
+      updatePlots(result);
+    }
+    finally {
+      setBusy(false);
+    }
+  }
+
+  async function redrawOnly() {
+    if (!pyodide) return;
+
+    pyodide.globals.set(
+      "js_show_points",
+      document.getElementById("showPoints").checked
+    );
+
+    const result = pyodide.runPython(`
+redraw(bool(js_show_points), int(js_zoom_mode))
+    `);
+
+    updatePlots(result);
+  }
+
+  async function playAll() {
+    if (!pyodide) return;
+
+    if (playing) {
+      playing = false;
+      document.getElementById("playBtn").textContent = "▶ Play";
+      return;
+    }
+
+    playing = true;
+    document.getElementById("playBtn").textContent = "⏸ Pause";
+
+    document.getElementById("applyBtn").disabled = true;
+    document.getElementById("nextBtn").disabled = true;
+    document.getElementById("resetBtn").disabled = true;
+    document.getElementById("zoomBtn").disabled = true;
+
+    const target = getSettings().experiments;
+
+    while (playing && currentRun < target) {
+      sendSettingsToPython();
+
+      const result = pyodide.runPython(`
+next_experiment(
+    int(js_n),
+    float(js_noise),
+    int(js_bias_degree),
+    int(js_variance_degree),
+    int(js_seed),
+    bool(js_show_points),
+    bool(js_same_data),
+    int(js_zoom_mode)
+)
+      `);
+
+      updatePlots(result);
+
+      const delay = parseInt(document.getElementById("speed").value);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    playing = false;
+    document.getElementById("playBtn").textContent = "▶ Play";
+
+    document.getElementById("applyBtn").disabled = false;
+    document.getElementById("nextBtn").disabled = false;
+    document.getElementById("resetBtn").disabled = false;
+    document.getElementById("zoomBtn").disabled = false;
+
+    if (currentRun >= target) {
+      document.getElementById("status").textContent += " | Finished";
+    }
+  }
+
+
+  async function cycleZoom() {
+    if (!pyodide || playing) return;
+
+    // Normal -> Zoom In -> Zoom Out -> Normal
+    zoomMode = (zoomMode + 1) % 3;
+
+    document.getElementById("zoomBtn").textContent =
+      zoomLabels[zoomMode];
+
+    pyodide.globals.set(
+      "js_show_points",
+      document.getElementById("showPoints").checked
+    );
+
+    pyodide.globals.set("js_zoom_mode", zoomMode);
+
+    setBusy(true);
+
+    try {
+      // IMPORTANT:
+      // This only redraws the graphs.
+      // It does NOT generate new data and does NOT remove old fitted models.
+      const result = pyodide.runPython(`
+redraw(bool(js_show_points), int(js_zoom_mode))
+      `);
+
+      updatePlots(result);
+    }
+    finally {
+      setBusy(false);
+    }
+  }
+
+
+  async function initPython() {
+    pyodide = await loadPyodide();
+    await pyodide.loadPackage(["numpy", "matplotlib"]);
+
+    pyodide.runPython(`
+import io
+import json
+import base64
+import warnings
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+warnings.simplefilter("ignore", np.RankWarning if hasattr(np, "RankWarning") else Warning)
+
+state = {
+    "run": 0,
+
+    # Each entry is a polynomial coefficient vector.
+    "bias_models": [],
+    "variance_models": [],
+
+    # Only the current points are kept.
+    "bias_x": None,
+    "bias_y": None,
+    "variance_x": None,
+    "variance_y": None,
+
+    "bias_formula": "",
+    "variance_degree": 10
+}
+
+
+def _formula(coeff):
+    degree = len(coeff) - 1
+
+    if degree == 1:
+        m, b = coeff
+        sign = "+" if b >= 0 else "-"
+        return f"y={m:.3f}x {sign} {abs(b):.3f}"
+
+    return f"polynomial degree {degree}"
+
+
+def _encode_figure(fig):
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format="png", bbox_inches="tight")
+    plt.close(fig)
+
+    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    return "data:image/png;base64," + encoded
+
+
+def _draw_one(kind, show_points=True, zoom_mode=0):
+    x_grid = np.linspace(0.0, 6.0, 700)
+
+    fig, ax = plt.subplots(figsize=(7.3, 6.0), dpi=120)
+
+    # True function
+    ax.plot(
+        x_grid,
+        np.sin(x_grid),
+        color="black",
+        linewidth=2.5,
+        zorder=5
+    )
+
+    if kind == "bias":
+        models = state["bias_models"]
+        px = state["bias_x"]
+        py = state["bias_y"]
+        title = f"Bias: {state['run']} fitted model"
+    else:
+        models = state["variance_models"]
+        px = state["variance_x"]
+        py = state["variance_y"]
+        title = f"Variance: {state['run']} fitted model"
+
+    if state["run"] != 1:
+        title += "s"
+
+    # Keep all model curves from earlier experiments.
+    for coeff in models:
+        y_fit = np.polyval(coeff, x_grid)
+
+        # Prevent extreme high-degree polynomial explosions from destroying
+        # the visual scale. Values outside the teaching range are clipped.
+        if kind == "variance":
+            y_fit = np.clip(y_fit, -2.2, 1.8)
+
+        ax.plot(
+            x_grid,
+            y_fit,
+            linewidth=1.25,
+            alpha=0.80,
+            zorder=2
+        )
+
+    # Display only the CURRENT dataset.
+    if show_points and px is not None and py is not None:
+        ax.scatter(
+            px,
+            py,
+            s=20,
+            facecolors="white",
+            edgecolors="black",
+            linewidths=0.7,
+            alpha=0.75,
+            zorder=6
+        )
+
+    # ---------------------------------------------------------
+    # GRAPH RANGE / ZOOM
+    #
+    # zoom_mode = 0 : Normal
+    # zoom_mode = 1 : Zoom In
+    # zoom_mode = 2 : Zoom Out
+    #
+    # The data and fitted models are NOT changed.
+    # Only the visible axis range changes.
+    # ---------------------------------------------------------
+    zoom_mode = int(zoom_mode)
+
+    if zoom_mode == 1:
+        # Zoom in around the most useful central region.
+        ax.set_xlim(0.5, 5.5)
+
+        if kind == "bias":
+            ax.set_ylim(-1.25, 1.25)
+            ax.set_yticks(np.arange(-1.0, 1.01, 0.5))
+        else:
+            ax.set_ylim(-1.5, 1.5)
+            ax.set_yticks(np.arange(-1.5, 1.51, 0.5))
+
+        ax.set_xticks(np.arange(1, 6, 1))
+
+    elif zoom_mode == 2:
+        # Zoom out to see more space around unstable variance curves.
+        ax.set_xlim(-0.5, 6.5)
+
+        if kind == "bias":
+            ax.set_ylim(-2.0, 2.0)
+            ax.set_yticks(np.arange(-2.0, 2.01, 0.5))
+        else:
+            ax.set_ylim(-2.5, 2.5)
+            ax.set_yticks(np.arange(-2.5, 2.51, 0.5))
+
+        ax.set_xticks(np.arange(0, 7, 1))
+
+    else:
+        # Original/default view.
+        ax.set_xlim(0, 6)
+
+        if kind == "bias":
+            ax.set_ylim(-1.5, 1.5)
+            ax.set_yticks(np.arange(-1.5, 1.51, 0.5))
+        else:
+            ax.set_ylim(-2.0, 1.5)
+            ax.set_yticks(np.arange(-2.0, 1.51, 0.5))
+
+        ax.set_xticks(np.arange(0, 7, 1))
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_title(title, fontsize=12)
+
+    ax.tick_params(direction="in", top=True, right=True)
+    ax.grid(False)
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.0)
+
+    fig.tight_layout()
+
+    return _encode_figure(fig)
+
+
+def _result(show_points, zoom_mode=0):
+    return json.dumps({
+        "bias_image": _draw_one("bias", show_points, zoom_mode),
+        "variance_image": _draw_one("variance", show_points, zoom_mode),
+        "run": state["run"],
+        "bias_formula": state["bias_formula"],
+        "variance_degree": state["variance_degree"]
+    })
+
+
+def reset_state(
+    n=25,
+    noise=0.30,
+    bias_degree=1,
+    variance_degree=10,
+    seed=42,
+    show_points=True,
+    zoom_mode=0
+):
+    state["run"] = 0
+    state["bias_models"] = []
+    state["variance_models"] = []
+
+    state["bias_x"] = None
+    state["bias_y"] = None
+    state["variance_x"] = None
+    state["variance_y"] = None
+
+    state["bias_formula"] = ""
+    state["variance_degree"] = int(variance_degree)
+
+    return _result(show_points, zoom_mode)
+
+
+def _sample(rng, n, noise):
+    x = np.sort(rng.uniform(0.0, 6.0, n))
+    y = np.sin(x) + rng.normal(0.0, noise, n)
+    return x, y
+
+
+def next_experiment(
+    n=25,
+    noise=0.30,
+    bias_degree=1,
+    variance_degree=10,
+    seed=42,
+    show_points=True,
+    same_data=True,
+    zoom_mode=0
+):
+    n = max(5, int(n))
+    noise = max(0.0, float(noise))
+    bias_degree = max(1, int(bias_degree))
+    variance_degree = max(2, int(variance_degree))
+
+    # Ensure enough points for both polynomial fits.
+    n = max(n, bias_degree + 2, variance_degree + 3)
+
+    # One experiment number => one synchronized seed.
+    experiment_seed = int(seed) + state["run"] * 7919
+
+    rng_bias = np.random.default_rng(experiment_seed)
+    x_bias, y_bias = _sample(rng_bias, n, noise)
+
+    if same_data:
+        # Exactly the same noisy sample drives both models.
+        x_var = x_bias.copy()
+        y_var = y_bias.copy()
+    else:
+        rng_var = np.random.default_rng(experiment_seed + 1234567)
+        x_var, y_var = _sample(rng_var, n, noise)
+
+    # LOW complexity -> high bias / underfitting
+    bias_coeff = np.polyfit(
+        x_bias,
+        y_bias,
+        bias_degree
+    )
+
+    # HIGH complexity -> high variance / overfitting
+    variance_coeff = np.polyfit(
+        x_var,
+        y_var,
+        variance_degree
+    )
+
+    # Keep all old fitted models.
+    state["bias_models"].append(bias_coeff.copy())
+    state["variance_models"].append(variance_coeff.copy())
+
+    # Replace old points with the current sample.
+    state["bias_x"] = x_bias
+    state["bias_y"] = y_bias
+    state["variance_x"] = x_var
+    state["variance_y"] = y_var
+
+    state["run"] += 1
+    state["bias_formula"] = _formula(bias_coeff)
+    state["variance_degree"] = variance_degree
+
+    return _result(show_points, zoom_mode)
+
+
+def redraw(show_points=True, zoom_mode=0):
+    return _result(show_points, zoom_mode)
+    `);
+
+    await applySettings();
+  }
+
+  document.getElementById("applyBtn").addEventListener("click", applySettings);
+  document.getElementById("nextBtn").addEventListener("click", nextSample);
+  document.getElementById("playBtn").addEventListener("click", playAll);
+  document.getElementById("resetBtn").addEventListener("click", applySettings);
+  document.getElementById("zoomBtn").addEventListener("click", cycleZoom);
+  document.getElementById("showPoints").addEventListener("change", redrawOnly);
+
+  initPython().catch(error => {
+    console.error(error);
+    document.getElementById("loading").innerHTML =
+      "Could not load Python/NumPy/Matplotlib.<br>Please check the internet connection and reload.";
+    document.getElementById("status").textContent = "Python loading failed";
+  });
+</script>
+
+</body>
+</html>
