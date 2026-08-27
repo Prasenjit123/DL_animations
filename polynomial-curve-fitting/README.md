@@ -1,1165 +1,915 @@
 # Interactive Polynomial Curve Fitting
 
-An interactive and presentation-ready visualization of **polynomial curve fitting**, designed to demonstrate how increasing model degree changes the flexibility of a fitted polynomial and can lead from **underfitting to increasing complexity and potential overfitting**.
+An interactive, browser-based visualization for understanding **polynomial curve fitting, model complexity, underfitting, and potential overfitting**.
 
-The project generates two outputs from the same Python program:
+The project provides a controlled visual experiment in which the same noisy observations are fitted with polynomial models of increasing degree. A degree slider and animation make it easy to see how additional model flexibility changes the fitted curve and the training error.
 
-1. A **standalone interactive HTML visualization** with a degree slider.
-2. A **high-quality 1920×1080 MP4 animation** showing the polynomial fit progressing from degree 1 through degree 30.
-
-The implementation uses a fixed noisy sample of a sine function and fits polynomial models of increasing degree to the same observations.
+> **Educational note:** The interpretation labels in this project are pedagogical. In particular, "potential overfitting" does not constitute a formal statistical test of overfitting. Formal overfitting assessment requires evaluation on unseen data.
 
 ---
 
-## 1. Project Overview
+## Overview
 
-The visualization starts with a set of noisy observations sampled from:
+Polynomial regression is easy to define mathematically, but the effect of increasing model complexity is often easier to understand visually than from equations alone.
 
-\[
-y=\sin(x)
-\]
-
-The observed data are generated as:
-
-\[
-y_i=\sin(x_i)+\epsilon_i
-\]
-
-where the noise term is sampled from a normal distribution:
-
-\[
-\epsilon_i\sim\mathcal{N}(0,\sigma^2)
-\]
-
-The program then fits polynomial models of increasing degree:
-
-\[
-y=a_0+a_1x+a_2x^2+\cdots+a_dx^d
-\]
-
-for:
-
-\[
-d=1,2,3,\ldots,30.
-\]
-
-The resulting fitted curves can be examined interactively using the HTML output or sequentially through the generated MP4 animation.
-
----
-
-# 2. Educational Objective
-
-The primary purpose of this project is to provide a visual explanation of **model complexity in polynomial curve fitting**.
-
-A low-degree polynomial may be too simple to represent the structure of the data.
-
-As the polynomial degree increases, the model becomes more flexible.
-
-At sufficiently high degrees, the model can begin fitting noise and exhibit highly complex behavior.
-
-The visualization therefore provides an intuitive progression:
+This project generates synthetic observations from a known function:
 
 ```text
-Low model complexity
-        ↓
-Underfitting
-        ↓
-More flexible model
-        ↓
-Reasonable / increasing complexity
-        ↓
-High model complexity
-        ↓
-Potential overfitting
+y = f(x) + ε
 ```
 
-The classification shown in the visualization is:
+where `ε` represents observation noise.
 
-| Polynomial degree | Interpretation |
-|---:|---|
-| 1–2 | UNDERFITTING |
-| 3–5 | REASONABLE FIT |
-| 6–9 | INCREASING COMPLEXITY |
-| 10–30 | POTENTIAL OVERFITTING |
-
-These labels are implemented directly in the Python program.
-
-> **Important:** These labels are pedagogical interpretations used by the visualization. They are not a statistical test that formally proves overfitting for every dataset.
-
----
-
-# 3. Dataset Generation
-
-The program does not load an external dataset.
-
-Instead, it generates a synthetic dataset so that the experiment is completely reproducible.
-
-The random seed is fixed:
-
-```python
-np.random.seed(42)
-```
-
-This means that running the program with the same configuration produces the same noisy observations.
-
----
-
-## 3.1 Number of Observations
-
-The current configuration uses:
-
-```python
-NUMBER_OF_POINTS = 50
-```
-
-Therefore, 50 observations are generated.
-
-The x-values are uniformly spaced between:
-
-\[
-0
-\]
-
-and:
-
-\[
-2\pi.
-\]
-
-The implementation uses:
-
-```python
-x_data = np.linspace(
-    0,
-    2 * np.pi,
-    NUMBER_OF_POINTS
-)
-```
-
----
-
-## 3.2 True Function
-
-The underlying function is:
-
-\[
-y=\sin(x)
-\]
-
-implemented as:
-
-```python
-y_true_data = np.sin(x_data)
-```
-
-The true function is also plotted as a dashed reference curve.
-
----
-
-## 3.3 Noise
-
-Gaussian noise is added to the true observations.
-
-The current noise level is:
-
-```python
-NOISE_LEVEL = 0.50
-```
-
-The noise is generated using:
-
-```python
-noise = np.random.normal(
-    loc=0,
-    scale=NOISE_LEVEL,
-    size=NUMBER_OF_POINTS
-)
-```
-
-Therefore:
-
-\[
-\epsilon\sim\mathcal{N}(0,0.5^2).
-\]
-
-The observed data are then:
-
-```python
-y_data = y_true_data + noise
-```
-
-This creates a controlled environment in which the effect of polynomial
-model complexity can be visualized.
-
----
-
-# 4. Polynomial Fitting
-
-For every degree from 1 through 30, the program fits a polynomial model to the same 50 observations.
-
-The fitting operation uses NumPy's polynomial representation:
-
-```python
-np.polynomial.Polynomial.fit(
-    x_data,
-    y_data,
-    degree
-)
-```
-
-The fitted model is then evaluated at two locations:
-
-1. The smooth plotting grid, to draw the fitted curve.
-2. The original training points, to calculate training MSE.
-
-The implementation is encapsulated in:
-
-```python
-def fit_polynomial(degree):
-```
-
----
-
-# 5. Training Mean Squared Error
-
-For every polynomial degree, the program calculates the training Mean Squared Error (MSE).
-
-The MSE is:
-
-\[
-MSE=
-\frac{1}{N}
-\sum_{i=1}^{N}
-(y_i-\hat{y}_i)^2
-\]
-
-where:
-
-- \(y_i\) is the observed value,
-- \(\hat{y}_i\) is the model prediction,
-- \(N\) is the number of observations.
-
-The implementation calculates:
-
-```python
-mse = np.mean(
-    (y_data - y_prediction) ** 2
-)
-```
-
-The resulting MSE is displayed dynamically in the HTML visualization and in every frame of the MP4 animation.
-
----
-
-# 6. Why Training MSE Is Shown
-
-Training MSE provides a useful numerical companion to the visual demonstration.
-
-As model degree increases, the polynomial has more flexibility to adapt to the training observations.
-
-This makes it possible to observe the relationship between:
+A polynomial model of degree `d` is then fitted to the observations:
 
 ```text
-Model complexity
-       ↓
-Training fit
-       ↓
-Training MSE
+ŷ(x) = a₀ + a₁x + a₂x² + ... + a_d x^d
 ```
 
-However, training MSE alone cannot establish generalization performance.
+The degree is increased from a simple model to increasingly flexible models while keeping the observations fixed.
 
-A model may have a very low training MSE while performing poorly on unseen data.
-
-Therefore, this visualization should be used to introduce the concept of complexity and overfitting, rather than as a complete model-selection experiment.
-
----
-
-# 7. Polynomial Degrees
-
-The maximum polynomial degree is controlled by:
-
-```python
-MAX_DEGREE = 30
-```
-
-The program pre-computes every model:
-
-```text
-Degree 1
-Degree 2
-Degree 3
-...
-Degree 30
-```
-
-The fitted curves and MSE values are stored in:
-
-```python
-curves = {}
-mse_values = {}
-```
-
-This means the interactive HTML slider can switch between already-computed models without repeatedly fitting the polynomial during interaction.
-
----
-
-# 8. Smooth Curve Rendering
-
-The polynomial models are evaluated on a dense grid of 1000 x-values:
-
-```python
-x_plot = np.linspace(
-    0,
-    2 * np.pi,
-    1000
-)
-```
-
-The dense grid is used only for smooth visualization of the fitted polynomial curves.
-
-The original 50 observations remain the training data used for fitting and MSE calculation.
-
----
-
-# 9. Interactive HTML Visualization
-
-The HTML output provides an interactive Plotly visualization.
-
-The graph contains three main visual elements:
-
-### 1. True Function
-
-\[
-y=\sin(x)
-\]
-
-shown as a dashed reference curve.
-
-### 2. Noisy Observations
-
-The 50 generated observations are shown as markers.
-
-### 3. Polynomial Fit
-
-The currently selected polynomial degree is shown as a solid fitted curve.
-
-The HTML visualization therefore allows the user to compare:
+The resulting visualization lets learners directly compare:
 
 ```text
 True function
-       +
+      +
 Noisy observations
-       +
+      +
 Polynomial approximation
+      +
+Training MSE
+      +
+Model-complexity interpretation
 ```
-
-for every degree from 1 through 30.
 
 ---
 
-# 10. Degree Slider
+## Key idea
 
-The HTML interface provides a slider containing:
+The central teaching message is:
 
 ```text
-1  2  3  4  5  ...  28  29  30
+Increasing polynomial degree
+            ↓
+Increasing model flexibility
+            ↓
+Greater ability to fit training observations
+            ↓
+Increasingly complex fitted curves
+            ↓
+Possible fitting of noise
+            ↓
+Potential overfitting
 ```
 
-The slider is controlled through Plotly animation frames.
+The project is therefore particularly useful as a visual introduction to:
 
-For every degree, the visualization updates:
+- Polynomial regression
+- Model capacity
+- Underfitting
+- Overfitting
+- Training error
+- Generalization
+- Bias-variance trade-off
+- Regularization
 
-- Polynomial curve
-- Polynomial degree
-- Training MSE
-- Interpretation label
+---
 
-For example:
+## Features
+
+- Interactive Plotly visualization
+- Eight selectable underlying functions
+- Configurable number of observations
+- Configurable noise level
+- Configurable maximum polynomial degree
+- Reproducible seeded dataset generation
+- Random sample generation
+- Manual polynomial-degree slider
+- Automatic degree animation
+- Four animation speeds
+- Training MSE calculation
+- True-function reference curve
+- Noisy training observations
+- Browser-side polynomial fitting
+- Self-contained JavaScript numerical solver
+- Responsive Plotly graph
+- No Python scientific-computing dependencies required
+
+---
+
+## Available functions
+
+The current interface provides eight choices for the underlying function:
+
+| Name | Function |
+|---|---|
+| Sine | `sin(x)` |
+| Cosine | `cos(x)` |
+| Double-frequency sine | `sin(2x)` |
+| Double-frequency cosine | `cos(2x)` |
+| Mixed periodic function | `sin(x) + 0.3cos(3x)` |
+| Quadratic | `x²` |
+| Cubic | `x³` |
+| Gaussian-shaped function | `exp(-x²)` |
+
+This allows the same model-complexity experiment to be demonstrated with functions having different shapes.
+
+---
+
+## Default configuration
+
+The default interface settings are:
+
+| Parameter | Default |
+|---|---:|
+| True function | `sin(x)` |
+| Number of data points | `50` |
+| Noise level | `0.50` |
+| Maximum polynomial degree | `30` |
+| Random seed | `42` |
+| Smooth plotting samples | `800` |
+| X range | `0` to `2π` |
+
+The HTML implementation defines these defaults directly in the interface and JavaScript application state. fileciteturn0file0L261-L370
+
+---
+
+## How the data are generated
+
+For each selected function, the application generates evenly spaced `x` values from `0` to `2π`.
+
+For every observation:
 
 ```text
-Polynomial Curve Fitting — Degree 5
-Training MSE = ...
-REASONABLE FIT
+yᵢ = f(xᵢ) + εᵢ
 ```
 
-The slider therefore provides direct visual control over model complexity.
+The noise is Gaussian, generated from a standard normal random variable and multiplied by the selected noise level.
 
----
+The application uses a deterministic seeded random-number generator. The generator is reset when the dataset is regenerated, so the same seed and settings reproduce the same sequence of noise values. fileciteturn0file0L602-L681
 
-# 11. Interactive Animation Speed
-
-The HTML animation is configured using:
-
-```python
-HTML_FRAME_DURATION = 700
-HTML_TRANSITION_DURATION = 300
-```
-
-These values control the duration of each animation frame and its transition.
-
-The HTML is therefore not simply a static graph with a slider; it contains Plotly animation frames for the polynomial degrees.
-
----
-
-# 12. Model Complexity Interpretation
-
-The visualization uses the following educational categorization.
-
-## Degree 1–2: Underfitting
-
-A very low-degree polynomial has limited flexibility.
-
-It may fail to capture the nonlinear structure present in the data.
-
----
-
-## Degree 3–5: Reasonable Fit
-
-Moderate-degree models generally have more flexibility and can provide a visually reasonable approximation of the noisy observations.
-
-The visualization labels this region:
+This gives the experiment an important property for teaching:
 
 ```text
-REASONABLE FIT
+Same settings + same seed
+            ↓
+Same dataset
+            ↓
+Same polynomial-fitting experiment
 ```
 
 ---
 
-## Degree 6–9: Increasing Complexity
+## Why a fixed dataset matters
 
-As the degree continues to increase, the model becomes increasingly flexible.
+When demonstrating model complexity, changing the dataset at the same time as changing the model makes the experiment difficult to interpret.
 
-The visualization labels this region:
+This project keeps the observations fixed while the polynomial degree changes.
+
+Therefore, when moving from degree 1 to degree 10, for example, the primary experimental change is the **model's flexibility**, not the data.
+
+That makes the visualization suitable for explaining the effect of model capacity in a controlled setting.
+
+---
+
+## Polynomial fitting
+
+For a selected degree `d`, the browser constructs the least-squares polynomial system using the observations.
+
+The coefficient vector is represented as:
 
 ```text
-INCREASING COMPLEXITY
+[a₀, a₁, a₂, ..., a_d]
 ```
 
----
+The implementation constructs the required matrix and right-hand-side vector from powers of the observed `x` values, then solves the resulting linear system.
 
-## Degree 10–30: Potential Overfitting
-
-High-degree polynomials can become extremely flexible.
-
-They may begin to follow noise and produce increasingly complex shapes.
-
-The visualization therefore labels this region:
+Conceptually:
 
 ```text
-POTENTIAL OVERFITTING
+Training observations
+        ↓
+Construct least-squares system
+        ↓
+Solve for polynomial coefficients
+        ↓
+Evaluate polynomial
+        ↓
+Render fitted curve
 ```
 
-The word **potential** is intentional. Formal overfitting assessment requires evaluation on unseen data, not only inspection of the training curve.
+The actual HTML contains an explicit matrix solver with pivot selection and row operations, followed by the polynomial-fitting and prediction routines. fileciteturn0file0L778-L1055
+
+This browser-side implementation means the generated HTML can perform the fitting without requiring NumPy or another Python numerical package.
 
 ---
 
-# 13. Coordinate System
+## Training Mean Squared Error
 
-The interactive HTML visualization uses:
-
-### X-axis
-
-\[
-0\leq x\leq2\pi
-\]
-
-### Y-axis
-
-\[
--2.5\leq y\leq2.5
-\]
-
-The same coordinate ranges are used for the video visualization.
-
-The axes are configured with clear titles, tick labels, and a white Plotly background.
-
----
-
-# 14. Teaching Annotation
-
-The visualization includes an explanatory annotation:
+For the selected polynomial, the application calculates training Mean Squared Error:
 
 ```text
-Model Complexity
-
-Low degree → Underfitting
-Moderate degree → Good fit
-High degree → Overfitting
+MSE = (1/N) Σ (yᵢ - ŷᵢ)²
 ```
 
-This annotation is intended to help students connect the mathematical visualization with the conceptual progression of model complexity.
+where:
 
-The annotation appears in both the interactive HTML visualization and the generated video.
+- `yᵢ` is the observed training value,
+- `ŷᵢ` is the polynomial prediction,
+- `N` is the number of training observations.
 
----
+The MSE is recalculated whenever the polynomial degree changes and is displayed in the information panel and plot title. fileciteturn0file0L1462-L1606
 
-# 15. High-Quality MP4 Animation
+### Why training MSE is useful here
 
-In addition to the interactive HTML file, the program generates an MP4 video.
+Training MSE provides a numerical measure of how closely the current polynomial fits the observations used for training.
 
-The output file is:
+It complements the visual evidence:
 
 ```text
-polynomial_curve_fitting_animation.mp4
+Visual observation:
+"How closely does the curve follow the points?"
+
+Numerical observation:
+"How large is the training MSE?"
 ```
 
-The video is generated using:
+However:
 
-```python
-imageio
-```
+> **Training MSE is not a measure of generalization.**
 
-and encoded using:
-
-```text
-libx264
-```
-
-The video resolution is configured as:
-
-```python
-VIDEO_WIDTH = 1920
-VIDEO_HEIGHT = 1080
-```
-
-Therefore, the resulting animation is Full HD:
-
-\[
-1920\times1080.
-\]
-
-This resolution is suitable for:
-
-- Classroom presentations
-- Lecture slides
-- Project demonstrations
-- Online teaching
-- Screen recording
-- Educational videos
+A model can achieve a very small training error and still perform poorly on unseen data.
 
 ---
 
-# 16. Video Frame Rate
+## Underfitting and potential overfitting
 
-The MP4 is generated at:
+The visualization uses a simple pedagogical interpretation based on polynomial degree:
 
-```python
-fps = 30
-```
+| Degree | Interpretation |
+|---:|---|
+| 1–2 | **UNDERFITTING** |
+| 3–5 | **REASONABLE FIT** |
+| 6–9 | **INCREASING COMPLEXITY** |
+| 10–30 | **POTENTIAL OVERFITTING** |
 
-Therefore, the video contains 30 frames per second.
+These categories are implemented directly in the HTML application. fileciteturn0file0L1497-L1534
 
-The program uses a frame-based approach to control how long each polynomial degree remains visible.
+### Important qualification
 
----
+These thresholds should **not** be interpreted as universal statistical rules.
 
-# 17. Video Timing
+For example, a degree-10 polynomial is not automatically overfit. Whether a model is overfit depends on the data, noise, sample size, model class, and most importantly its performance on unseen observations.
 
-The current configuration uses:
-
-```python
-VIDEO_HOLD_TIME = 0.175
-VIDEO_TRANSITION_TIME = 0.075
-```
-
-At 30 frames per second:
-
-### Hold time
-
-\[
-0.175\times30\approx5
-\]
-
-frames.
-
-### Transition time
-
-\[
-0.075\times30\approx2
-\]
-
-frames.
-
-Therefore, each degree is displayed for approximately:
-
-\[
-0.25\text{ seconds}
-\]
-
-under the current settings.
-
-With 30 degrees, the resulting animation is approximately:
-
-\[
-30\times0.25=7.5\text{ seconds}
-\]
-
-of degree progression, excluding minor encoding and rounding effects.
-
-The Python script itself reports an approximate duration in its final console output, but the exact duration depends on the integer frame counts generated from the configured timing values.
-
----
-
-# 18. Video Generation Process
-
-For each degree from 1 through 30, the program:
-
-1. Creates a dedicated high-resolution Plotly figure.
-2. Adds the true sine function.
-3. Adds the 50 noisy observations.
-4. Adds the polynomial fitted at the current degree.
-5. Adds the training MSE.
-6. Adds the model-complexity interpretation.
-7. Converts the Plotly figure to PNG.
-8. Converts the PNG to an image array.
-9. Appends the required number of frames to the MP4 writer.
-
-This produces a presentation-oriented video in which the polynomial fit changes degree by degree.
-
----
-
-# 19. Video and HTML Use Different Presentation Configurations
-
-The HTML and video outputs are intentionally configured separately.
-
-The HTML visualization uses:
-
-```python
-width = 1200
-height = 750
-```
-
-while the video uses:
-
-```python
-VIDEO_WIDTH = 1920
-VIDEO_HEIGHT = 1080
-```
-
-The video also uses larger fonts and margins to improve readability at Full HD resolution.
-
-This prevents the video from simply being a low-resolution capture of the browser visualization.
-
----
-
-# 20. Output Files
-
-Running the program creates two primary outputs:
-
-```text
-interactive_polynomial_curve_fitting.html
-```
-
-and:
-
-```text
-polynomial_curve_fitting_animation.mp4
-```
-
-Both files are saved in:
-
-```python
-OUTPUT_FOLDER = Path.cwd()
-```
-
-Therefore, they are written to the current working directory.
-
-The HTML file is automatically opened in the default browser.
-
-The MP4 remains available as a normal video file that can be opened with a standard media player.
-
----
-
-# 21. Output Summary
-
-| Output | Format | Purpose |
-|---|---|---|
-| Interactive visualization | HTML | Interactive exploration |
-| Polynomial animation | MP4 | Presentation and teaching |
-| HTML resolution | 1200 × 750 | Browser visualization |
-| Video resolution | 1920 × 1080 | Full HD presentation |
-| Polynomial degrees | 1–30 | Model complexity progression |
-| Data points | 50 | Synthetic noisy observations |
-| Noise standard deviation | 0.50 | Controlled noise level |
-| True function | \(\sin(x)\) | Ground-truth reference |
-| MSE | Training MSE | Numerical fit measure |
-
----
-
-# 22. Configuration Reference
-
-All major settings are grouped near the beginning of the Python file.
-
-```python
-NUMBER_OF_POINTS = 50
-NOISE_LEVEL = 0.50
-MAX_DEGREE = 30
-
-HTML_FRAME_DURATION = 700
-HTML_TRANSITION_DURATION = 300
-
-VIDEO_HOLD_TIME = 0.175
-VIDEO_TRANSITION_TIME = 0.075
-
-VIDEO_WIDTH = 1920
-VIDEO_HEIGHT = 1080
-
-OUTPUT_FOLDER = Path.cwd()
-```
-
-This design makes the experiment easy to modify without changing the main implementation logic.
-
----
-
-# 23. Changing the Number of Data Points
-
-Change:
-
-```python
-NUMBER_OF_POINTS = 50
-```
-
-For example:
-
-```python
-NUMBER_OF_POINTS = 30
-```
-
-will generate 30 observations.
-
-Similarly:
-
-```python
-NUMBER_OF_POINTS = 100
-```
-
-will generate 100 observations.
-
-The same value automatically updates the generated dataset and the observation label shown in the plots.
-
----
-
-# 24. Changing the Noise Level
-
-Change:
-
-```python
-NOISE_LEVEL = 0.50
-```
-
-For example:
-
-```python
-NOISE_LEVEL = 0.25
-```
-
-creates less noisy observations.
-
-```python
-NOISE_LEVEL = 0.75
-```
-
-creates more noisy observations.
-
-The value is used as the standard deviation of the Gaussian noise distribution.
-
-Higher noise makes the fitting problem visually more challenging and can make the difference between fitting the underlying function and fitting individual observations easier to discuss.
-
----
-
-# 25. Changing the Maximum Polynomial Degree
-
-Change:
-
-```python
-MAX_DEGREE = 30
-```
-
-For example:
-
-```python
-MAX_DEGREE = 15
-```
-
-generates degrees 1–15.
-
-```python
-MAX_DEGREE = 40
-```
-
-generates degrees 1–40.
-
-The same maximum degree controls:
-
-- Polynomial fitting
-- HTML animation frames
-- HTML slider
-- Video generation
-- Console reporting
-
----
-
-# 26. Changing HTML Animation Speed
-
-The HTML animation uses:
-
-```python
-HTML_FRAME_DURATION = 700
-HTML_TRANSITION_DURATION = 300
-```
-
-Reducing these values makes the interactive animation faster.
-
-Increasing them makes it slower.
-
-For example:
-
-```python
-HTML_FRAME_DURATION = 350
-HTML_TRANSITION_DURATION = 150
-```
-
-will make the HTML animation approximately twice as fast in terms of frame timing.
-
----
-
-# 27. Changing Video Speed
-
-The video speed is controlled independently using:
-
-```python
-VIDEO_HOLD_TIME = 0.175
-VIDEO_TRANSITION_TIME = 0.075
-```
-
-To make the video faster, reduce these values.
-
-For example:
-
-```python
-VIDEO_HOLD_TIME = 0.0875
-VIDEO_TRANSITION_TIME = 0.0375
-```
-
-approximately halves the time allocated to each degree.
-
-To make the video slower, increase them.
-
-The video frame rate remains:
-
-```python
-fps = 30
-```
-
----
-
-# 28. Reproducibility
-
-The program uses:
-
-```python
-np.random.seed(42)
-```
-
-This fixes the random number generator before generating the noise.
-
-Therefore, with the same:
-
-- Number of points
-- Noise level
-- Random seed
-- Function
-- Polynomial configuration
-
-the generated dataset is reproducible.
-
-Changing the seed will produce a different noisy sample.
-
----
-
-# 29. Important Distinction: Training Error vs Generalization
-
-The visualization displays **training MSE**.
-
-Training MSE measures how closely the polynomial fits the observations used to train it.
-
-It does not measure how well the model will perform on unseen observations.
-
-For a rigorous study of overfitting, a separate validation or test dataset should be introduced and the following should be compared:
-
-\[
-Training\ Error
-\]
-
-versus:
-
-\[
-Validation/Test\ Error.
-\]
-
-This project intentionally keeps the experiment simple and focuses on visualizing the effect of increasing polynomial degree.
-
----
-
-# 30. Numerical Considerations
-
-High-degree polynomial fitting can become numerically challenging.
-
-The program uses:
-
-```python
-np.polynomial.Polynomial.fit(...)
-```
-
-which uses NumPy's polynomial fitting representation rather than directly constructing an unscaled Vandermonde system in the most naive form.
-
-Nevertheless, very high polynomial degrees can still exhibit numerical sensitivity and highly oscillatory behavior.
-
-The current experiment is therefore intentionally limited to:
-
-```python
-MAX_DEGREE = 30
-```
-
----
-
-# 31. Educational Interpretation of Overfitting
-
-A high-degree polynomial may pass very closely through noisy observations.
-
-This can make the training error small while producing a visually complex function.
-
-However, visual complexity alone is not sufficient evidence of statistical overfitting.
-
-A rigorous definition requires poor generalization to unseen data.
-
-Therefore, this project uses the label:
+The project intentionally uses the term:
 
 ```text
 POTENTIAL OVERFITTING
 ```
 
-rather than claiming that every degree from 10 to 30 is statistically overfit.
-
-This distinction is important when using the animation for academic teaching.
+rather than claiming that high degree alone proves overfitting.
 
 ---
 
-# 32. Suggested Teaching Sequence
+## Interactive controls
 
-A useful classroom sequence is:
+### True Function
 
-### Step 1 — Show the data
+Select the function used to generate the synthetic observations.
 
-Explain that the observations are noisy samples from:
+### Number of Data Points
 
-\[
-y=\sin(x).
-\]
+Controls how many observations are generated.
 
-### Step 2 — Start with degree 1
+The current interface accepts values from 5 to 500. fileciteturn0file0L300-L316
 
-Show that a linear model is too restrictive to capture the nonlinear structure.
+### Noise Level
 
-### Step 3 — Increase the degree
+Controls the magnitude of the Gaussian observation noise.
 
-Move through degrees 2, 3, 4 and 5.
+The default is `0.50`, with the interface allowing values from `0` to `5` in increments of `0.05`. fileciteturn0file0L319-L336
 
-Discuss increasing flexibility.
+### Maximum Polynomial Degree
 
-### Step 4 — Observe training MSE
+Controls the upper limit of the degree slider.
 
-Explain how the model becomes increasingly capable of fitting the training observations.
+The interface accepts degrees from 1 upward, and the application prevents the maximum degree from reaching the number of observations. This preserves the intended relationship between the number of observations and polynomial coefficients. fileciteturn0file0L1135-L1187
 
-### Step 5 — Continue to higher degrees
+### Random Seed
 
-Observe the increasing complexity of the fitted curve.
+Controls reproducible dataset generation.
 
-### Step 6 — Discuss overfitting
+### Apply Settings
 
-Explain why a highly flexible model can begin to model noise rather than the underlying relationship.
+Reads the current settings, regenerates the dataset, resets the degree to 1, and updates the visualization.
 
-### Step 7 — Introduce test error
+### New Sample
 
-Use the visualization as a bridge to the more rigorous concept of generalization and the bias-variance trade-off.
+Regenerates the observations using the currently displayed settings and seed.
+
+### Random Sample
+
+Creates a new random seed and generates a new noisy dataset.
+
+### Play / Pause
+
+Automatically progresses through the available polynomial degrees.
+
+### Speed
+
+Cycles through four animation speeds:
+
+```text
+1× → 2× → 3× → 4× → 1×
+```
+
+The underlying timing values are defined in the HTML application. fileciteturn0file0L585-L600
+
+### Polynomial Degree
+
+The slider provides direct control over the currently displayed model degree.
 
 ---
 
-# 33. Project Structure
+## Visualization layout
 
-Recommended GitHub organization:
+The interface is organized into four major areas:
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│              Interactive Polynomial Curve Fitting        │
+├──────────────────────────────────────────────────────────┤
+│ Function | Points | Noise | Max Degree | Seed | Controls │
+├──────────────────────────────────────────────────────────┤
+│                    Polynomial Degree                     │
+│             ─────────────●──────────────                 │
+├──────────────────────────────────────────────────────────┤
+│ Function | Points | Noise | Seed | Degree | MSE | Status │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│                     Plotly Visualization                 │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+The graph contains:
+
+1. The true underlying function
+2. Noisy observations
+3. The currently selected polynomial fit
+
+The application uses a dense set of plotting points to render smooth curves while retaining the original observations for fitting and MSE calculation. fileciteturn0file0L1286-L1347
+
+---
+
+## Animation
+
+The Play control automatically increases the polynomial degree:
+
+```text
+Degree 1
+   ↓
+Degree 2
+   ↓
+Degree 3
+   ↓
+...
+   ↓
+Maximum degree
+   ↓
+Degree 1
+   ↺
+```
+
+The application uses JavaScript timers to advance between degrees. When the maximum degree is reached, the animation returns to degree 1. fileciteturn0file0L1856-L1941
+
+This is useful for lectures because the instructor can let the model-complexity progression play without manually moving the slider.
+
+---
+
+## Reproducibility
+
+Reproducibility is built into the data-generation process.
+
+The application maintains a seed state and uses a deterministic random-number generator. When `generateData()` is called, the generator is reset to the selected seed before the noisy observations are created. fileciteturn0file0L1211-L1279
+
+Therefore, for a fixed configuration:
+
+```text
+Function
++ Number of points
++ Noise level
++ Random seed
+        ↓
+Deterministic noisy dataset
+```
+
+This is particularly useful when:
+
+- preparing lecture demonstrations,
+- recording instructional material,
+- comparing two configurations,
+- reproducing a classroom example,
+- debugging the visualization.
+
+---
+
+## Numerical considerations
+
+High-degree polynomial fitting can become numerically sensitive.
+
+A polynomial basis contains powers such as:
+
+```text
+1, x, x², x³, ..., xᵈ
+```
+
+As the degree increases, these terms can differ substantially in magnitude and the associated least-squares system can become poorly conditioned.
+
+The current application intentionally implements the fitting procedure explicitly in JavaScript for transparency and education.
+
+This makes the project useful for explaining the mathematics, but it is not intended to replace numerically robust regression libraries in production applications.
+
+For production numerical work, one would typically consider techniques such as:
+
+- input scaling,
+- orthogonal polynomial bases,
+- QR-based least squares,
+- SVD-based least squares,
+- regularization,
+- numerically stable polynomial representations.
+
+---
+
+## A subtle but important modeling lesson
+
+One of the most important lessons in this visualization is that **fit quality and model quality are not the same thing**.
+
+Suppose two models produce:
+
+```text
+Model A:
+Higher training MSE
+Simpler curve
+
+Model B:
+Lower training MSE
+Highly complex curve
+```
+
+It is tempting to declare Model B better because its training error is lower.
+
+That conclusion is not justified without evaluating how the models perform on data they did not see during training.
+
+The correct conceptual distinction is:
+
+```text
+Training performance
+        ≠
+Generalization performance
+```
+
+This is the natural point at which to introduce:
+
+- train/test splits,
+- validation sets,
+- cross-validation,
+- bias-variance trade-off,
+- regularization,
+- model selection.
+
+---
+
+## Recommended teaching sequence
+
+A practical classroom demonstration can follow this sequence.
+
+### 1. Show the noisy observations
+
+Start with the default `sin(x)` configuration.
+
+Ask students to identify the underlying pattern.
+
+### 2. Show degree 1
+
+Explain that a linear model has limited representational capacity.
+
+### 3. Increase the degree gradually
+
+Move through degrees 2–5.
+
+Discuss the increasing flexibility of the polynomial.
+
+### 4. Introduce training MSE
+
+Use the displayed MSE to connect visual fit with a quantitative training measure.
+
+### 5. Continue toward high degrees
+
+Observe how the fitted curve can become increasingly complex.
+
+### 6. Discuss noise fitting
+
+Explain that a sufficiently flexible model can begin responding to individual noisy observations.
+
+### 7. Make the overfitting distinction
+
+Emphasize that visual complexity and low training error alone do not formally prove overfitting.
+
+### 8. Introduce unseen data
+
+Use this visualization as the transition to test error and generalization.
+
+---
+
+## Project architecture
+
+The project is intentionally lightweight:
 
 ```text
 polynomial-curve-fitting/
 │
-├── polynomial_curve_fitting.py
+├── polynomial-curve-fitting.py
+├── polynomial-curve-fitting.html
 └── README.md
 ```
 
-After running the program locally, the directory may contain:
+### Python generator
+
+`polynomial-curve-fitting.py` is the source generator.
+
+Its job is to write the complete HTML application to disk.
+
+The Python generator does not perform the browser-side regression itself.
+
+### HTML application
+
+`polynomial-curve-fitting.html` is the actual interactive application.
+
+It contains:
+
+- HTML interface
+- CSS styling
+- JavaScript state
+- seeded random generation
+- function evaluation
+- polynomial fitting
+- polynomial prediction
+- training MSE calculation
+- Plotly graph generation
+- animation controls
+
+The application initializes itself by generating the default dataset when the page loads. fileciteturn0file0L2022-L2029
+
+---
+
+## Why the application runs in the browser
+
+The numerical and visualization logic is embedded in the generated HTML.
+
+This has several advantages:
+
+- No Python server is required.
+- No backend is required.
+- The interaction is immediate.
+- The HTML can be copied and shared as a single application file.
+- Students can inspect the JavaScript implementation.
+- The polynomial fitting logic is visible rather than hidden behind a machine-learning library.
+
+The main external dependency is Plotly.js, loaded by the HTML document. fileciteturn0file0L8-L14
+
+---
+
+## Requirements
+
+### Python
+
+Python 3 is sufficient for generating the HTML.
+
+The generator uses Python's standard library and does not require NumPy, SciPy, Matplotlib, or scikit-learn.
+
+### Browser
+
+A modern JavaScript-enabled browser is required to run the generated visualization.
+
+Because Plotly.js is loaded from a CDN, internet access is normally required when opening the generated HTML.
+
+---
+
+## Installation
+
+Clone or download the repository and enter the project directory:
+
+```bash
+cd polynomial-curve-fitting
+```
+
+No Python package installation is required for the HTML generator.
+
+---
+
+## Usage
+
+Run the generator:
+
+```bash
+python polynomial-curve-fitting.py
+```
+
+Then open:
+
+```text
+polynomial-curve-fitting.html
+```
+
+in a modern browser.
+
+Once the page is open:
+
+1. Select the underlying function.
+2. Set the number of observations.
+3. Set the noise level.
+4. Set the maximum degree.
+5. Choose a random seed.
+6. Click **Apply Settings**.
+7. Move the polynomial-degree slider.
+8. Use **Play** to animate the progression.
+9. Observe both the fitted curve and training MSE.
+
+---
+
+## Reproducing a specific experiment
+
+For a reproducible classroom example, record the following five settings:
+
+```text
+Function:       sin(x)
+Points:         50
+Noise:          0.50
+Seed:           42
+Maximum degree: 30
+```
+
+Another person using the same settings will obtain the same deterministic noisy sample.
+
+This makes the project suitable for:
+
+- lecture notes,
+- demonstrations,
+- screenshots,
+- instructional videos,
+- practical exercises,
+- student assignments.
+
+---
+
+## Suggested repository structure
+
+For a source-oriented GitHub repository:
 
 ```text
 polynomial-curve-fitting/
 │
-├── polynomial_curve_fitting.py
-├── README.md
-├── interactive_polynomial_curve_fitting.html
-└── polynomial_curve_fitting_animation.mp4
+├── polynomial-curve-fitting.py    # HTML generator
+├── polynomial-curve-fitting.html  # Generated interactive application
+├── README.md                       # Documentation
+└── LICENSE                         # Optional, but recommended
 ```
 
-The HTML and MP4 files are generated artifacts.
-
-They do not need to be committed to the source repository unless the generated educational outputs are intentionally being distributed with the project.
+Generated artifacts can either be committed for convenient distribution or regenerated from the Python source.
 
 ---
 
-# 34. Technologies
+## Limitations
 
-| Technology | Purpose |
-|---|---|
-| Python | Main implementation |
-| NumPy | Data generation and polynomial fitting |
-| Plotly | Interactive visualization |
-| ImageIO | MP4 frame writing |
-| FFmpeg / libx264 | H.264 video encoding |
-| HTML | Standalone interactive output |
-| JavaScript | Plotly animation controls |
+This project is intentionally focused on a single educational concept.
 
----
-
-# 35. Key Features
-
-- Synthetic noisy sine-wave dataset
-- Reproducible random sampling
-- Configurable number of observations
-- Configurable noise level
-- Polynomial fitting from degree 1 to 30
-- Pre-computed polynomial curves
-- Training MSE calculation
-- Interactive Plotly HTML visualization
-- Degree slider
-- Animated degree transitions
-- Model-complexity interpretation
-- True-function reference curve
-- Noisy observation markers
-- Full HD 1920×1080 MP4 output
-- H.264 video encoding
-- Configurable video timing
-- Automatic browser launch for HTML
-- Local output generation
-
----
-
-# 36. Intended Use
-
-This project is intended for educational and demonstration purposes, particularly for:
-
-- Machine Learning lectures
-- Data Science courses
-- Polynomial regression demonstrations
-- Model-complexity discussions
-- Underfitting and overfitting demonstrations
-- Bias-variance discussions
-- Interactive classroom teaching
-- Lecture presentations
-- Educational video creation
-- Self-learning
-
----
-
-# 37. Limitations
-
-The current implementation uses a single synthetic dataset generated from:
-
-\[
-y=\sin(x)+\epsilon.
-\]
-
-It does not currently provide:
+It currently does not provide:
 
 - Train/test split
 - Validation-set evaluation
 - Test MSE
 - Cross-validation
-- Regularization
 - Ridge regression
 - Lasso regression
 - Automatic model selection
 - Confidence intervals
-- Statistical significance testing
+- Statistical hypothesis testing
+- Formal bias-variance decomposition
 
-These could be added as extensions if the project is later expanded into a more complete polynomial regression teaching framework.
+The fixed interpretation thresholds are also pedagogical rather than statistically universal.
 
----
-
-# 38. Future Extensions
-
-Potential extensions include:
-
-1. Train/test data visualization.
-2. Training MSE versus test MSE plots.
-3. Bias-variance visualization.
-4. Ridge and Lasso regularization.
-5. Adjustable polynomial degree from the interface.
-6. Adjustable noise level from the interface.
-7. Different underlying functions.
-8. Multiple random seeds.
-9. Dataset regeneration.
-10. Residual visualization.
-11. Error curves versus polynomial degree.
-12. Comparison of several polynomial models.
-13. Interactive coefficient controls.
-14. Additional export formats.
+These limitations are appropriate for the project's current purpose: **making polynomial model complexity visually intuitive**.
 
 ---
 
-# 39. Summary
+## Future extensions
 
-This project provides a compact but comprehensive visual demonstration of polynomial model complexity.
+The current architecture provides a natural foundation for a more comprehensive regression-learning environment.
 
-Starting with 50 noisy observations generated from:
+### 1. Train/test split
 
-\[
-y=\sin(x),
-\]
+Generate separate training and test observations and display both.
 
-the program fits polynomial models from degree 1 through degree 30.
+### 2. Training vs. test error
 
-For every degree, it provides:
+Plot:
 
-- The fitted polynomial curve
-- The original noisy observations
-- The true sine function
-- Training MSE
-- A pedagogical model-complexity interpretation
+```text
+Polynomial degree
+        ↓
+Training MSE
+        +
+Test MSE
+```
 
-The project produces both an interactive HTML visualization and a Full HD MP4 animation, making it suitable for both interactive exploration and classroom presentation.
+This would provide a direct visual demonstration of generalization and overfitting.
 
-The central learning progression is:
+### 3. Bias-variance visualization
 
-\[
-\boxed{
-\text{Low Complexity}
-\rightarrow
-\text{Better Fit}
-\rightarrow
-\text{High Flexibility}
-\rightarrow
-\text{Potential Overfitting}
-}
-\]
+Repeat the experiment across many independently generated datasets and estimate:
+
+```text
+Bias
+Variance
+Irreducible noise
+Expected prediction error
+```
+
+### 4. Regularization
+
+Add Ridge and Lasso regression to demonstrate how regularization controls model complexity.
+
+### 5. Residual analysis
+
+Display residuals:
+
+```text
+eᵢ = yᵢ - ŷᵢ
+```
+
+and allow students to inspect systematic patterns.
+
+### 6. Coefficient visualization
+
+Plot polynomial coefficients as the degree increases.
+
+This would provide a second perspective on model complexity.
+
+### 7. Numerical-stability comparison
+
+Compare the current explicit polynomial basis with scaled or orthogonal polynomial representations.
+
+### 8. Model-selection experiment
+
+Allow the learner to choose a model based on validation performance rather than training MSE alone.
 
 ---
 
-# 40. Author
+## Educational value
+
+This project is especially suitable for:
+
+- Machine Learning courses
+- Data Science courses
+- Regression lectures
+- Introductory statistical learning
+- Model-complexity demonstrations
+- Underfitting/overfitting discussions
+- Bias-variance lectures
+- Regularization introductions
+- Interactive classroom teaching
+- Self-learning
+
+It is most effective when used as a visual bridge between the intuitive idea of "a more flexible model" and the formal statistical concept of generalization.
+
+---
+
+## Technical summary
+
+| Component | Implementation |
+|---|---|
+| Data source | Synthetic |
+| Default function | `sin(x)` |
+| Domain | `0 ≤ x ≤ 2π` |
+| Noise | Gaussian |
+| Default observations | 50 |
+| Polynomial degree | 1–30 by default |
+| Fitting | Least-squares polynomial fit |
+| Solver | Browser-side JavaScript matrix solver |
+| Error metric | Training MSE |
+| Visualization | Plotly.js |
+| Interaction | HTML + JavaScript |
+| Randomness | Deterministic seeded generator |
+| Runtime | Modern web browser |
+| Python dependencies | Standard library only |
+
+---
+
+## Design philosophy
+
+The project intentionally favors **transparency over abstraction**.
+
+Instead of hiding the numerical process behind a machine-learning framework, the HTML exposes the essential steps:
+
+```text
+Generate observations
+        ↓
+Evaluate the underlying function
+        ↓
+Add Gaussian noise
+        ↓
+Construct polynomial least-squares system
+        ↓
+Solve for coefficients
+        ↓
+Predict over a dense grid
+        ↓
+Calculate training MSE
+        ↓
+Render the result
+```
+
+This makes the project suitable not only for demonstration, but also for discussion of what polynomial regression is actually doing computationally.
+
+---
+
+## Frequently asked questions
+
+### Does the Python program perform the polynomial fitting?
+
+No. The Python program generates the HTML application. The fitting is performed by JavaScript in the browser.
+
+### Do I need NumPy?
+
+No. The generator does not require NumPy.
+
+### Do I need scikit-learn?
+
+No. The project does not depend on scikit-learn.
+
+### Does the project use an external dataset?
+
+No. The dataset is generated synthetically.
+
+### Is the dataset reproducible?
+
+Yes, when the same function, number of points, noise level, and seed are used.
+
+### Does a high-degree polynomial always overfit?
+
+No. High degree means greater flexibility, not automatic overfitting.
+
+### Why does the application say "potential overfitting"?
+
+Because the interface is designed for education. The label highlights a region of high model complexity without claiming that unseen-data performance has been measured.
+
+### Is training MSE enough to select the best degree?
+
+No. Training MSE alone cannot establish generalization performance.
+
+### Can the project demonstrate test error?
+
+Not in its current form. A train/test extension would be required.
+
+---
+
+## License
+
+No project-specific license is currently established by the supplied project materials.
+
+If this repository is intended for public distribution, add an explicit `LICENSE` file and replace this section with the corresponding license terms.
+
+---
+
+## Author
 
 **Dr. Prasenjit Dey**
 
-Part of the **DL Animations** collection of interactive visualizations for Machine Learning and Deep Learning education.
+Part of an educational collection of interactive visualizations for Machine Learning and Deep Learning concepts.
 
 ---
 
-# 41. License
+## Final perspective
 
-Please refer to the license of the parent repository for the applicable terms of use, modification, and distribution.
+The purpose of this project is not to teach that "low degree is good" and "high degree is bad."
+
+The deeper lesson is:
+
+```text
+Model complexity determines flexibility.
+Flexibility affects training fit.
+Training fit alone does not determine generalization.
+```
+
+In compact form:
+
+```text
+Good training fit
+        ≠
+Good generalization
+```
+
+The interactive visualization provides an intuitive starting point for understanding why machine-learning models must balance **fitting the observed data** with **learning patterns that remain useful on unseen data**.
+
+That principle is the foundation for the subsequent study of validation, model selection, bias-variance trade-off, and regularization.
