@@ -1,460 +1,13 @@
-import numpy as np
-import plotly.graph_objects as go
 from pathlib import Path
-import webbrowser
-
 
 # ============================================================
-# 1. MAIN SETTINGS
+# Interactive Polynomial Curve Fitting
+# HTML generator
 # ============================================================
 
-MAX_ORDER = 20
+HTML_FILE = Path(__file__).with_name("polynomial-curve-fitting.html")
 
-# All coefficients are 1
-# m1 = m2 = ... = m20 = 1
-
-coefficients = [1.0] * MAX_ORDER
-
-
-# ============================================================
-# 2. VISIBLE AXIS RANGE
-# ============================================================
-
-X_AXIS_MIN = -2
-X_AXIS_MAX = 2
-
-Y_AXIS_MIN = -5
-Y_AXIS_MAX = 5
-
-
-# ============================================================
-# 3. ACTUAL CURVE RANGE
-# ============================================================
-
-# We evaluate the curves only from -1 to +1.
-#
-# The visible x-axis remains -2 to +2.
-
-X_DRAW_MIN = -1
-X_DRAW_MAX = 1
-
-N_POINTS = 1200
-
-
-# ============================================================
-# 4. CREATE X VALUES
-# ============================================================
-
-x = np.linspace(
-    X_DRAW_MIN,
-    X_DRAW_MAX,
-    N_POINTS
-)
-
-
-# ============================================================
-# 5. CREATE INDIVIDUAL CURVES
-# ============================================================
-#
-# LEFT:
-#
-# y = x
-# y = x²
-# y = x³
-# ...
-# y = x²⁰
-# ============================================================
-
-individual_curves = []
-
-for order in range(1, MAX_ORDER + 1):
-
-    y = (
-        coefficients[order - 1]
-        * x ** order
-    )
-
-    individual_curves.append(y)
-
-
-# ============================================================
-# 6. CREATE SUPERPOSITION CURVES
-# ============================================================
-#
-# RIGHT:
-#
-# Order 1:
-# y = x
-#
-# Order 2:
-# y = x + x²
-#
-# Order 3:
-# y = x + x² + x³
-#
-# ...
-#
-# Order 20:
-# y = x + x² + ... + x²⁰
-# ============================================================
-
-superposition_curves = []
-
-for order in range(1, MAX_ORDER + 1):
-
-    y = np.zeros_like(x)
-
-    for k in range(1, order + 1):
-
-        y += (
-            coefficients[k - 1]
-            * x ** k
-        )
-
-    superposition_curves.append(y)
-
-
-# ============================================================
-# 7. EQUATION LABELS
-# ============================================================
-
-individual_equations = []
-
-for order in range(1, MAX_ORDER + 1):
-
-    if order == 1:
-
-        individual_equations.append(
-            "y = x"
-        )
-
-    else:
-
-        individual_equations.append(
-            f"y = x^{order}"
-        )
-
-
-superposition_equations = []
-
-for order in range(1, MAX_ORDER + 1):
-
-    terms = []
-
-    for k in range(1, order + 1):
-
-        if k == 1:
-
-            terms.append("x")
-
-        else:
-
-            terms.append(
-                f"x^{k}"
-            )
-
-    superposition_equations.append(
-        "y = " + " + ".join(terms)
-    )
-
-
-# ============================================================
-# 8. CREATE LEFT FIGURE
-# ============================================================
-
-left_fig = go.Figure()
-
-
-for order in range(1, MAX_ORDER + 1):
-
-    left_fig.add_trace(
-
-        go.Scatter(
-
-            x=x,
-
-            y=individual_curves[
-                order - 1
-            ],
-
-            mode="lines",
-
-            name=individual_equations[
-                order - 1
-            ],
-
-            visible=(order == 1),
-
-            line=dict(
-                width=3
-            )
-
-        )
-
-    )
-
-
-# ============================================================
-# 9. LEFT FIGURE LAYOUT
-# ============================================================
-
-left_fig.update_layout(
-
-    width=900,
-
-    height=760,
-
-    title=dict(
-
-        text=(
-            "<b>Individual Terms</b>"
-            "<br>"
-            "<sup>Through Order 1</sup>"
-        ),
-
-        x=0.5,
-
-        font=dict(
-            size=22
-        )
-
-    ),
-
-    xaxis=dict(
-
-        title="<b>x</b>",
-
-        range=[
-            X_AXIS_MIN,
-            X_AXIS_MAX
-        ],
-
-        dtick=1,
-
-        zeroline=True,
-
-        zerolinewidth=3,
-
-        showgrid=True,
-
-        gridwidth=1,
-
-        showline=True,
-
-        linewidth=2,
-
-        mirror=True
-
-    ),
-
-    yaxis=dict(
-
-        title="<b>y</b>",
-
-        range=[
-            Y_AXIS_MIN,
-            Y_AXIS_MAX
-        ],
-
-        dtick=1,
-
-        zeroline=True,
-
-        zerolinewidth=3,
-
-        showgrid=True,
-
-        gridwidth=1,
-
-        showline=True,
-
-        linewidth=2,
-
-        mirror=True
-
-    ),
-
-    template="plotly_white",
-
-    showlegend=False,
-
-    margin=dict(
-
-        l=65,
-
-        r=20,
-
-        t=85,
-
-        b=55
-
-    )
-
-)
-
-
-# ============================================================
-# 10. CREATE RIGHT FIGURE
-# ============================================================
-
-right_fig = go.Figure()
-
-
-for order in range(1, MAX_ORDER + 1):
-
-    right_fig.add_trace(
-
-        go.Scatter(
-
-            x=x,
-
-            y=superposition_curves[
-                order - 1
-            ],
-
-            mode="lines",
-
-            name=superposition_equations[
-                order - 1
-            ],
-
-            visible=(order == 1),
-
-            line=dict(
-                width=3
-            )
-
-        )
-
-    )
-
-
-# ============================================================
-# 11. RIGHT FIGURE LAYOUT
-# ============================================================
-
-right_fig.update_layout(
-
-    width=900,
-
-    height=760,
-
-    title=dict(
-
-        text=(
-            "<b>Superposition</b>"
-            "<br>"
-            "<sup>Through Order 1</sup>"
-        ),
-
-        x=0.5,
-
-        font=dict(
-            size=22
-        )
-
-    ),
-
-    xaxis=dict(
-
-        title="<b>x</b>",
-
-        range=[
-            X_AXIS_MIN,
-            X_AXIS_MAX
-        ],
-
-        dtick=1,
-
-        zeroline=True,
-
-        zerolinewidth=3,
-
-        showgrid=True,
-
-        gridwidth=1,
-
-        showline=True,
-
-        linewidth=2,
-
-        mirror=True
-
-    ),
-
-    yaxis=dict(
-
-        title="<b>y</b>",
-
-        range=[
-            Y_AXIS_MIN,
-            Y_AXIS_MAX
-        ],
-
-        dtick=1,
-
-        zeroline=True,
-
-        zerolinewidth=3,
-
-        showgrid=True,
-
-        gridwidth=1,
-
-        showline=True,
-
-        linewidth=2,
-
-        mirror=True
-
-    ),
-
-    template="plotly_white",
-
-    showlegend=False,
-
-    margin=dict(
-
-        l=65,
-
-        r=20,
-
-        t=85,
-
-        b=55
-
-    )
-
-)
-
-
-# ============================================================
-# 12. CONVERT PLOTS TO HTML
-# ============================================================
-
-left_html = left_fig.to_html(
-
-    full_html=False,
-
-    include_plotlyjs=True
-
-)
-
-
-right_html = right_fig.to_html(
-
-    full_html=False,
-
-    include_plotlyjs=False
-
-)
-
-
-# ============================================================
-# 13. COMPLETE HTML
-# ============================================================
-
-html = f"""
+HTML = r"""
 <!DOCTYPE html>
 
 <html>
@@ -464,223 +17,222 @@ html = f"""
 <meta charset="UTF-8">
 
 <title>
-Polynomial Terms vs Superposition
+Interactive Polynomial Curve Fitting
 </title>
+
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 
 
 <style>
 
-* {{
-    box-sizing: border-box;
-}}
-
-
-html,
-body {{
+body {
 
     margin: 0;
-
     padding: 0;
-
-    width: 100%;
-
-    min-height: 100%;
-
-    background: #eeeeee;
 
     font-family:
         Arial,
         Helvetica,
         sans-serif;
 
-}}
+    background: #f4f4f4;
+}
 
 
-#container {{
+#main {
 
-    width: 100%;
+    width: 95%;
+    max-width: 1450px;
 
-    max-width: 1900px;
-
-    margin: 0 auto;
-
-    padding: 8px;
-
-}}
+    margin: 20px auto;
+}
 
 
-#header {{
-
-    background: white;
-
-    border-radius: 8px;
-
-    padding: 8px 15px;
+#title {
 
     text-align: center;
 
-    margin-bottom: 8px;
-
-    box-shadow:
-        0 1px 5px
-        rgba(0,0,0,0.15);
-
-}}
-
-
-#mainTitle {{
-
-    font-size: 26px;
+    font-size: 30px;
 
     font-weight: bold;
 
-}}
+    margin-bottom: 15px;
+}
 
 
-#currentEquation {{
-
-    margin-top: 4px;
-
-    font-size: 17px;
-
-    font-weight: bold;
-
-    min-height: 44px;
-
-}}
-
-
-#controls {{
+#controls {
 
     background: white;
 
-    border-radius: 8px;
+    border-radius: 10px;
 
-    padding: 8px;
+    padding: 18px;
+
+    box-shadow:
+        0px 2px 8px
+        rgba(0,0,0,0.15);
 
     display: flex;
 
-    align-items: center;
+    flex-wrap: wrap;
+
+    gap: 18px;
+
+    align-items: end;
 
     justify-content: center;
 
-    gap: 8px;
-
-    flex-wrap: wrap;
-
-    margin-bottom: 8px;
-
-    box-shadow:
-        0 1px 5px
-        rgba(0,0,0,0.15);
-
-}}
+    margin-bottom: 15px;
+}
 
 
-button {{
+.control {
 
-    padding:
-        8px 14px;
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 5px;
+}
+
+
+.control label {
+
+    font-weight: bold;
 
     font-size: 14px;
-
-    font-weight: bold;
-
-    border:
-        1px solid #555;
-
-    border-radius: 6px;
-
-    background: white;
-
-    cursor: pointer;
-
-}}
+}
 
 
-button:hover {{
+select,
+input[type="number"] {
 
-    background: #eeeeee;
+    font-size: 16px;
 
-}}
+    padding: 7px;
 
+    border-radius: 5px;
 
-button:disabled {{
+    border: 1px solid #999;
 
-    opacity: 0.4;
-
-    cursor: not-allowed;
-
-}}
+}
 
 
-#status {{
-
-    font-weight: bold;
+button {
 
     font-size: 15px;
 
-    padding:
-        5px 10px;
+    padding: 9px 16px;
 
-}}
+    border-radius: 6px;
 
+    border: none;
 
-#plots {{
+    cursor: pointer;
 
-    display: grid;
+    background: #444;
 
-    grid-template-columns:
-        1fr 1fr;
-
-    gap: 8px;
-
-    width: 100%;
-
-}}
+    color: white;
+}
 
 
-.plotBox {{
+#applyButton {
+
+    background: #222;
+}
+
+
+#newSampleButton {
+
+    background: #333;
+}
+
+
+#randomSampleButton {
+
+    background: #555;
+}
+
+
+#playButton {
+
+    background: #444;
+}
+
+
+#speedButton {
+
+    background: #666;
+}
+
+
+#degreeArea {
 
     background: white;
 
-    border-radius: 8px;
+    padding: 15px 25px;
 
-    overflow: hidden;
+    border-radius: 10px;
 
-    min-width: 0;
+    margin-bottom: 15px;
 
     box-shadow:
-        0 1px 5px
-        rgba(0,0,0,0.15);
+        0px 2px 8px
+        rgba(0,0,0,0.12);
+}
 
-}}
+
+#degreeSlider {
+
+    width: 100%;
+}
 
 
-.plotTitle {{
+#degreeValue {
 
     text-align: center;
 
-    font-size: 18px;
+    font-size: 22px;
 
     font-weight: bold;
 
-    padding:
-        6px 0 0 0;
-
-}}
+    margin-top: 5px;
+}
 
 
-@media (max-width: 1000px) {{
+#information {
 
-    #plots {{
+    background: white;
 
-        grid-template-columns:
-            1fr;
+    border-radius: 10px;
 
-    }}
+    padding: 12px;
 
-}}
+    text-align: center;
+
+    font-size: 17px;
+
+    margin-bottom: 15px;
+
+    box-shadow:
+        0px 2px 8px
+        rgba(0,0,0,0.12);
+}
+
+
+#plot {
+
+    background: white;
+
+    border-radius: 10px;
+
+    padding: 5px;
+
+    box-shadow:
+        0px 2px 8px
+        rgba(0,0,0,0.15);
+}
+
 
 </style>
 
@@ -690,140 +242,314 @@ button:disabled {{
 <body>
 
 
-<div id="container">
+<div id="main">
 
 
-<!-- ======================================================
-     HEADER
-     ====================================================== -->
+<div id="title">
 
-<div id="header">
-
-<div id="mainTitle">
-
-Polynomial Terms vs Superposition
+Interactive Polynomial Curve Fitting
 
 </div>
 
 
-<div id="currentEquation">
-
-Order 1 / 20
-
-</div>
-
-</div>
-
-
-<!-- ======================================================
+<!-- =====================================================
      CONTROLS
-     ====================================================== -->
+     ===================================================== -->
 
 <div id="controls">
 
 
-<button
-    id="previousButton"
-    type="button"
+<!-- TRUE FUNCTION -->
+
+<div class="control">
+
+<label>
+True Function
+</label>
+
+<select id="functionSelect">
+
+<option value="sin(x)">
+sin(x)
+</option>
+
+<option value="cos(x)">
+cos(x)
+</option>
+
+<option value="sin(2x)">
+sin(2x)
+</option>
+
+<option value="cos(2x)">
+cos(2x)
+</option>
+
+<option value="sin(x) + 0.3cos(3x)">
+sin(x) + 0.3cos(3x)
+</option>
+
+<option value="x²">
+x²
+</option>
+
+<option value="x³">
+x³
+</option>
+
+<option value="exp(-x²)">
+exp(-x²)
+</option>
+
+</select>
+
+</div>
+
+
+<!-- NUMBER OF DATA POINTS -->
+
+<div class="control">
+
+<label>
+Number of Data Points
+</label>
+
+<input
+    id="pointsInput"
+    type="number"
+    min="5"
+    max="500"
+    value="50"
 >
 
-◀ Previous
-
-</button>
+</div>
 
 
-<button
-    id="nextButton"
-    type="button"
+<!-- NOISE -->
+
+<div class="control">
+
+<label>
+Noise Level
+</label>
+
+<input
+    id="noiseInput"
+    type="number"
+    min="0"
+    max="5"
+    step="0.05"
+    value="0.50"
 >
 
-Next Order ▶
+</div>
 
+
+<!-- MAXIMUM DEGREE -->
+
+<div class="control">
+
+<label>
+Maximum Polynomial Degree
+</label>
+
+<input
+    id="maxDegreeInput"
+    type="number"
+    min="1"
+    max="50"
+    value="30"
+>
+
+</div>
+
+
+<!-- SEED -->
+
+<div class="control">
+
+<label>
+Random Seed
+</label>
+
+<input
+    id="seedInput"
+    type="number"
+    value="42"
+>
+
+</div>
+
+
+<!-- APPLY -->
+
+<div class="control">
+
+<button
+    id="applyButton"
+    onclick="generateData()"
+>
+Apply Settings
 </button>
 
+</div>
+
+
+<!-- NEW SAMPLE -->
+
+<div class="control">
+
+<button
+    id="newSampleButton"
+    onclick="generateNewSample()"
+>
+New Sample
+</button>
+
+</div>
+
+
+<!-- RANDOM SAMPLE -->
+
+<div class="control">
+
+<button
+    id="randomSampleButton"
+    onclick="generateRandomSample()"
+>
+Random Sample
+</button>
+
+</div>
+
+
+<!-- PLAY -->
+
+<div class="control">
 
 <button
     id="playButton"
-    type="button"
+    onclick="toggleAnimation()"
 >
-
 ▶ Play
-
 </button>
 
-
-<button
-    id="pauseButton"
-    type="button"
->
-
-⏸ Pause
-
-</button>
+</div>
 
 
-<button
-    id="resetButton"
-    type="button"
->
+<!-- SPEED -->
 
-↻ Reset
-
-</button>
-
+<div class="control">
 
 <button
     id="speedButton"
-    type="button"
+    onclick="changeSpeed()"
 >
-
 Speed: 1×
-
 </button>
 
-
-<span id="status">
-
-Order 1 / 20
-
-</span>
+</div>
 
 
 </div>
 
 
-<!-- ======================================================
-     TWO LARGE PLOTS
-     ====================================================== -->
+<!-- =====================================================
+     DEGREE SLIDER
+     ===================================================== -->
 
-<div id="plots">
+<div id="degreeArea">
+
+<label>
+
+<b>
+Polynomial Degree
+</b>
+
+</label>
 
 
-<div class="plotBox">
+<input
+    id="degreeSlider"
+    type="range"
+    min="1"
+    max="30"
+    value="1"
+    step="1"
+    oninput="changeDegree()"
+>
 
-<div class="plotTitle">
 
-Individual Terms
+<div id="degreeValue">
+
+Degree = 1
 
 </div>
 
-{left_html}
 
 </div>
 
 
-<div class="plotBox">
+<!-- =====================================================
+     INFORMATION
+     ===================================================== -->
 
-<div class="plotTitle">
+<div id="information">
 
-Superposition
+True function:
+<b id="functionInfo">
+sin(x)
+</b>
+
+&nbsp;&nbsp; | &nbsp;&nbsp;
+
+Data points:
+<b id="pointsInfo">
+50
+</b>
+
+&nbsp;&nbsp; | &nbsp;&nbsp;
+
+Noise:
+<b id="noiseInfo">
+0.50
+</b>
+
+&nbsp;&nbsp; | &nbsp;&nbsp;
+
+Seed:
+<b id="seedInfo">
+42
+</b>
+
+&nbsp;&nbsp; | &nbsp;&nbsp;
+
+Polynomial degree:
+<b id="degreeInfo">
+1
+</b>
+
+&nbsp;&nbsp; | &nbsp;&nbsp;
+
+Training MSE:
+<b id="mseInfo">
+-
+</b>
+
+&nbsp;&nbsp; | &nbsp;&nbsp;
+
+<b id="interpretationInfo">
+UNDERFITTING
+</b>
 
 </div>
 
-{right_html}
 
-</div>
+<!-- =====================================================
+     PLOT
+     ===================================================== -->
 
+<div id="plot">
 
 </div>
 
@@ -834,600 +560,1479 @@ Superposition
 <script>
 
 
-// ==========================================================
-// 1. SETTINGS
-// ==========================================================
+// ========================================================
+// GLOBAL VARIABLES
+// ========================================================
 
-const MAX_ORDER = 20;
+let xData = [];
 
+let yData = [];
 
-// ==========================================================
-// 2. STATE
-// ==========================================================
+let xPlot = [];
 
-let currentOrder = 1;
+let yTrue = [];
+
+let currentFunction = "sin(x)";
+
+let noiseLevel = 0.50;
+
+let numberOfPoints = 50;
+
+let maxDegree = 30;
+
+let currentDegree = 1;
+
+let randomSeed = 42;
+
+let animationTimer = null;
 
 let isPlaying = false;
 
-let timer = null;
-
-let speedIndex = 1;
+let speedIndex = 0;
 
 
-// ==========================================================
-// 3. SPEED
-// ==========================================================
+// ========================================================
+// ANIMATION SPEEDS
+// ========================================================
 
 const speeds = [
 
-    2000,
+    700,   // 1×
 
-    1000,
+    350,   // 2×
 
-    500,
+    233,   // 3×
 
-    250
-
-];
-
-
-const speedLabels = [
-
-    "0.5×",
-
-    "1×",
-
-    "2×",
-
-    "4×"
+    175    // 4×
 
 ];
 
 
-// ==========================================================
-// 4. FIND THE TWO PLOTLY GRAPHS
-// ==========================================================
+// ========================================================
+// SEEDED RANDOM NUMBER GENERATOR
+// ========================================================
 
-const graphs =
-    document.querySelectorAll(
-        ".plotly-graph-div"
-    );
+let seedState = 42;
 
 
-const leftGraph =
-    graphs[0];
+function seededRandom() {
 
+    /*
+       Mulberry32-style deterministic generator.
+       Same seed = same random sequence.
+    */
 
-const rightGraph =
-    graphs[1];
+    seedState += 0x6D2B79F5;
 
+    let t = seedState;
 
-// ==========================================================
-// 5. CHECK THAT BOTH GRAPHS EXIST
-// ==========================================================
-
-if (!leftGraph || !rightGraph) {{
-
-    console.error(
-        "Could not find both Plotly graphs."
-    );
-
-}}
-
-
-// ==========================================================
-// 6. UPDATE BOTH GRAPHS
-// ==========================================================
-
-function updatePlots() {{
-
-    if (!leftGraph || !rightGraph) {{
-
-        return;
-
-    }}
-
-
-    // ------------------------------------------------------
-    // Determine which curves are visible
-    // ------------------------------------------------------
-
-    const visibility = [];
-
-
-    for (
-
-        let i = 0;
-
-        i < MAX_ORDER;
-
-        i++
-
-    ) {{
-
-        visibility.push(
-            i < currentOrder
+    t =
+        Math.imul(
+            t ^ (t >>> 15),
+            t | 1
         );
 
-    }}
+    t ^=
+        t
+        +
+        Math.imul(
+            t ^ (t >>> 7),
+            t | 61
+        );
+
+    return (
+        (
+            t ^
+            (t >>> 14)
+        )
+        >>> 0
+    )
+    /
+    4294967296;
+
+}
 
 
-    // ------------------------------------------------------
-    // Update LEFT graph
-    // ------------------------------------------------------
+// ========================================================
+// NORMAL RANDOM NUMBER
+// ========================================================
 
-    Plotly.restyle(
+function randomNormal() {
 
-        leftGraph,
+    let u = 0;
 
-        {{
+    let v = 0;
 
-            visible:
-                visibility
 
-        }}
+    while (u === 0) {
 
+        u = seededRandom();
+
+    }
+
+
+    while (v === 0) {
+
+        v = seededRandom();
+
+    }
+
+
+    return Math.sqrt(
+        -2 * Math.log(u)
+    )
+    *
+    Math.cos(
+        2 * Math.PI * v
     );
 
-
-    // ------------------------------------------------------
-    // Update RIGHT graph
-    // ------------------------------------------------------
-
-    Plotly.restyle(
-
-        rightGraph,
-
-        {{
-
-            visible:
-                visibility
-
-        }}
-
-    );
+}
 
 
-    // ------------------------------------------------------
-    // Current individual equation
-    // ------------------------------------------------------
+// ========================================================
+// TRUE FUNCTION
+// ========================================================
 
-    let leftEquation;
+function evaluateFunction(
+    functionName,
+    x
+) {
 
 
-    if (currentOrder === 1) {{
+    if (
+        functionName === "sin(x)"
+    ) {
 
-        leftEquation = "y = x";
+        return Math.sin(x);
 
-    }}
+    }
 
-    else {{
 
-        leftEquation =
-            "y = x^"
+    if (
+        functionName === "cos(x)"
+    ) {
+
+        return Math.cos(x);
+
+    }
+
+
+    if (
+        functionName === "sin(2x)"
+    ) {
+
+        return Math.sin(2 * x);
+
+    }
+
+
+    if (
+        functionName === "cos(2x)"
+    ) {
+
+        return Math.cos(2 * x);
+
+    }
+
+
+    if (
+        functionName ===
+        "sin(x) + 0.3cos(3x)"
+    ) {
+
+        return (
+            Math.sin(x)
             +
-            currentOrder;
+            0.3 * Math.cos(3 * x)
+        );
 
-    }}
+    }
 
 
-    // ------------------------------------------------------
-    // Current superposition equation
-    // ------------------------------------------------------
+    if (
+        functionName === "x²"
+    ) {
 
-    let rightEquation = "y = x";
+        return x * x;
+
+    }
+
+
+    if (
+        functionName === "x³"
+    ) {
+
+        return x * x * x;
+
+    }
+
+
+    if (
+        functionName === "exp(-x²)"
+    ) {
+
+        return Math.exp(
+            -x * x
+        );
+
+    }
+
+
+    return Math.sin(x);
+
+}
+
+
+// ========================================================
+// MATRIX SOLVER
+// ========================================================
+
+function solveLinearSystem(
+    A,
+    b
+) {
+
+
+    let n = b.length;
+
+    let M = [];
 
 
     for (
+        let i = 0;
+        i < n;
+        i++
+    ) {
 
-        let k = 2;
-
-        k <= currentOrder;
-
-        k++
-
-    ) {{
-
-        rightEquation +=
-            " + x^"
-            +
-            k;
+        M[i] =
+            A[i].slice();
 
-    }}
+        M[i].push(
+            b[i]
+        );
 
+    }
 
-    // ------------------------------------------------------
-    // Update header
-    // ------------------------------------------------------
 
-    document
-        .getElementById(
-            "currentEquation"
-        )
-        .innerHTML =
+    for (
+        let i = 0;
+        i < n;
+        i++
+    ) {
 
-            "<b>Order "
-            +
-            currentOrder
-            +
-            " / "
-            +
-            MAX_ORDER
-            +
-            "</b>"
-            +
-            "<br>"
-            +
-            "Left: "
-            +
-            leftEquation
-            +
-            " &nbsp;&nbsp;&nbsp; "
-            +
-            "|"
-            +
-            " &nbsp;&nbsp;&nbsp; "
-            +
-            "Right: "
-            +
-            rightEquation;
 
+        let maxRow = i;
 
-    // ------------------------------------------------------
-    // Update status
-    // ------------------------------------------------------
 
-    document
-        .getElementById(
-            "status"
-        )
-        .innerHTML =
+        for (
+            let k = i + 1;
+            k < n;
+            k++
+        ) {
 
-            "Order "
-            +
-            currentOrder
-            +
-            " / "
-            +
-            MAX_ORDER;
+            if (
+                Math.abs(
+                    M[k][i]
+                )
+                >
+                Math.abs(
+                    M[maxRow][i]
+                )
+            ) {
 
+                maxRow = k;
 
-    // ------------------------------------------------------
-    // Button states
-    // ------------------------------------------------------
+            }
 
-    document
-        .getElementById(
-            "previousButton"
-        )
-        .disabled =
-            currentOrder === 1;
+        }
 
 
-    document
-        .getElementById(
-            "nextButton"
-        )
-        .disabled =
-            currentOrder === MAX_ORDER;
+        let temp = M[i];
 
-}}
+        M[i] =
+            M[maxRow];
 
+        M[maxRow] =
+            temp;
 
-// ==========================================================
-// 7. NEXT ORDER
-// ==========================================================
 
-function nextOrder() {{
+        if (
+            Math.abs(
+                M[i][i]
+            )
+            <
+            1e-12
+        ) {
 
-    if (
-        currentOrder < MAX_ORDER
-    ) {{
+            M[i][i] =
+                1e-12;
 
-        currentOrder++;
+        }
 
-        updatePlots();
 
-    }}
+        let pivot =
+            M[i][i];
 
-}}
 
+        for (
+            let j = i;
+            j <= n;
+            j++
+        ) {
 
-// ==========================================================
-// 8. PREVIOUS ORDER
-// ==========================================================
+            M[i][j] /=
+                pivot;
 
-function previousOrder() {{
+        }
 
-    if (
-        currentOrder > 1
-    ) {{
 
-        currentOrder--;
+        for (
+            let k = 0;
+            k < n;
+            k++
+        ) {
 
-        updatePlots();
+            if (
+                k !== i
+            ) {
 
-    }}
+                let factor =
+                    M[k][i];
 
-}}
 
+                for (
+                    let j = i;
+                    j <= n;
+                    j++
+                ) {
 
-// ==========================================================
-// 9. PAUSE
-// ==========================================================
+                    M[k][j]
+                    -=
+                    factor *
+                    M[i][j];
 
-function pauseAnimation() {{
+                }
 
-    isPlaying = false;
+            }
 
+        }
 
-    if (timer !== null) {{
+    }
 
-        clearTimeout(timer);
 
-        timer = null;
+    let solution = [];
 
-    }}
 
+    for (
+        let i = 0;
+        i < n;
+        i++
+    ) {
 
-    document
-        .getElementById(
-            "playButton"
-        )
-        .innerHTML =
-            "▶ Play";
+        solution.push(
+            M[i][n]
+        );
 
-}}
+    }
 
 
-// ==========================================================
-// 10. PLAY
-// ==========================================================
+    return solution;
 
-function playAnimation() {{
+}
 
-    if (isPlaying) {{
 
-        return;
+// ========================================================
+// POLYNOMIAL FITTING
+// ========================================================
 
-    }}
+function polynomialFit(
+    degree
+) {
 
 
-    // If already at final order,
-    // start again from order 1.
+    let n =
+        xData.length;
 
-    if (
-        currentOrder >= MAX_ORDER
-    ) {{
 
-        currentOrder = 1;
+    let size =
+        degree + 1;
 
-        updatePlots();
 
-    }}
+    let A = [];
 
+    let b = [];
 
-    isPlaying = true;
 
+    for (
+        let i = 0;
+        i < size;
+        i++
+    ) {
 
-    document
-        .getElementById(
-            "playButton"
-        )
-        .innerHTML =
-            "▶ Playing";
+        A[i] = [];
 
+        b[i] = 0;
 
-    scheduleNextStep();
 
-}}
+        for (
+            let j = 0;
+            j < size;
+            j++
+        ) {
 
+            let sum = 0;
 
-// ==========================================================
-// 11. NEXT ANIMATION STEP
-// ==========================================================
 
-function scheduleNextStep() {{
+            for (
+                let k = 0;
+                k < n;
+                k++
+            ) {
 
-    if (!isPlaying) {{
+                sum +=
+                    Math.pow(
+                        xData[k],
+                        i + j
+                    );
 
-        return;
+            }
 
-    }}
 
+            A[i][j] =
+                sum;
 
-    if (
-        currentOrder >= MAX_ORDER
-    ) {{
+        }
 
-        pauseAnimation();
 
-        return;
+        for (
+            let k = 0;
+            k < n;
+            k++
+        ) {
 
-    }}
+            b[i] +=
+                yData[k]
+                *
+                Math.pow(
+                    xData[k],
+                    i
+                );
 
+        }
 
-    timer = setTimeout(
+    }
 
-        function() {{
 
-            if (!isPlaying) {{
-
-                return;
-
-            }}
-
-
-            currentOrder++;
-
-            updatePlots();
-
-            scheduleNextStep();
-
-        }},
-
-        speeds[
-            speedIndex
-        ]
-
+    return solveLinearSystem(
+        A,
+        b
     );
 
-}}
+}
 
 
-// ==========================================================
-// 12. RESET
-// ==========================================================
+// ========================================================
+// POLYNOMIAL PREDICTION
+// ========================================================
 
-function resetGraph() {{
-
-    pauseAnimation();
-
-    currentOrder = 1;
-
-    updatePlots();
-
-}}
+function polynomialPredict(
+    coefficients,
+    x
+) {
 
 
-// ==========================================================
-// 13. PREVIOUS BUTTON
-// ==========================================================
+    let y = 0;
 
-document
+
+    for (
+        let i = 0;
+        i < coefficients.length;
+        i++
+    ) {
+
+        y +=
+            coefficients[i]
+            *
+            Math.pow(
+                x,
+                i
+            );
+
+    }
+
+
+    return y;
+
+}
+
+
+// ========================================================
+// READ SETTINGS
+// ========================================================
+
+function readSettings() {
+
+
+    currentFunction =
+        document
+        .getElementById(
+            "functionSelect"
+        )
+        .value;
+
+
+    numberOfPoints =
+        parseInt(
+            document
+            .getElementById(
+                "pointsInput"
+            )
+            .value
+        );
+
+
+    noiseLevel =
+        parseFloat(
+            document
+            .getElementById(
+                "noiseInput"
+            )
+            .value
+        );
+
+
+    maxDegree =
+        parseInt(
+            document
+            .getElementById(
+                "maxDegreeInput"
+            )
+            .value
+        );
+
+
+    randomSeed =
+        parseInt(
+            document
+            .getElementById(
+                "seedInput"
+            )
+            .value
+        );
+
+
+    if (
+        !Number.isFinite(
+            numberOfPoints
+        )
+        ||
+        numberOfPoints < 5
+    ) {
+
+        numberOfPoints = 5;
+
+        document
+        .getElementById(
+            "pointsInput"
+        )
+        .value = 5;
+
+    }
+
+
+    if (
+        !Number.isFinite(
+            noiseLevel
+        )
+        ||
+        noiseLevel < 0
+    ) {
+
+        noiseLevel = 0.50;
+
+        document
+        .getElementById(
+            "noiseInput"
+        )
+        .value = 0.50;
+
+    }
+
+
+    if (
+        !Number.isFinite(
+            maxDegree
+        )
+        ||
+        maxDegree < 1
+    ) {
+
+        maxDegree = 1;
+
+    }
+
+
+    /*
+       A polynomial of degree d has d+1
+       coefficients.
+
+       We therefore keep:
+       
+       maximum degree <= number of data points - 1
+    */
+
+    if (
+        maxDegree >= numberOfPoints
+    ) {
+
+        maxDegree =
+            numberOfPoints - 1;
+
+        document
+        .getElementById(
+            "maxDegreeInput"
+        )
+        .value =
+            maxDegree;
+
+    }
+
+
+    if (
+        !Number.isFinite(
+            randomSeed
+        )
+    ) {
+
+        randomSeed = 42;
+
+        document
+        .getElementById(
+            "seedInput"
+        )
+        .value = 42;
+
+    }
+
+}
+
+
+// ========================================================
+// GENERATE DATA
+// ========================================================
+
+function generateData() {
+
+
+    readSettings();
+
+
+    stopAnimation();
+
+
+    /*
+       Reset deterministic random generator.
+
+       This is the important part:
+
+       Same seed
+       +
+       same settings
+       =
+       same dataset.
+    */
+
+    seedState =
+        randomSeed;
+
+
+    xData = [];
+
+    yData = [];
+
+
+    for (
+        let i = 0;
+        i < numberOfPoints;
+        i++
+    ) {
+
+
+        let x =
+            (
+                2
+                *
+                Math.PI
+                *
+                i
+            )
+            /
+            (
+                numberOfPoints - 1
+            );
+
+
+        let y =
+            evaluateFunction(
+                currentFunction,
+                x
+            );
+
+
+        y +=
+            noiseLevel
+            *
+            randomNormal();
+
+
+        xData.push(x);
+
+        yData.push(y);
+
+    }
+
+
+    // Smooth curve
+
+    xPlot = [];
+
+    yTrue = [];
+
+
+    for (
+        let i = 0;
+        i < 800;
+        i++
+    ) {
+
+
+        let x =
+            (
+                2
+                *
+                Math.PI
+                *
+                i
+            )
+            /
+            799;
+
+
+        xPlot.push(x);
+
+
+        yTrue.push(
+
+            evaluateFunction(
+                currentFunction,
+                x
+            )
+
+        );
+
+    }
+
+
+    // Reset degree
+
+    currentDegree = 1;
+
+
+    let slider =
+        document
+        .getElementById(
+            "degreeSlider"
+        );
+
+
+    slider.max =
+        maxDegree;
+
+
+    slider.value =
+        1;
+
+
+    updatePlot();
+
+}
+
+
+// ========================================================
+// NEW SAMPLE
+// ========================================================
+
+function generateNewSample() {
+
+
+    /*
+       Keep all current settings,
+       but regenerate the noisy observations
+       using the seed currently shown.
+    */
+
+    readSettings();
+
+    generateData();
+
+}
+
+
+// ========================================================
+// RANDOM SAMPLE
+// ========================================================
+
+function generateRandomSample() {
+
+
+    /*
+       Generate a new random seed.
+    */
+
+    randomSeed =
+        Math.floor(
+            Math.random()
+            *
+            1000000000
+        );
+
+
+    document
     .getElementById(
-        "previousButton"
+        "seedInput"
     )
-    .addEventListener(
-
-        "click",
-
-        previousOrder
-
-    );
+    .value =
+        randomSeed;
 
 
-// ==========================================================
-// 14. NEXT BUTTON
-// ==========================================================
+    generateData();
 
-document
+}
+
+
+// ========================================================
+// CHANGE DEGREE
+// ========================================================
+
+function changeDegree() {
+
+
+    currentDegree =
+        parseInt(
+
+            document
+            .getElementById(
+                "degreeSlider"
+            )
+            .value
+
+        );
+
+
+    updatePlot();
+
+}
+
+
+// ========================================================
+// UPDATE PLOT
+// ========================================================
+
+function updatePlot() {
+
+
+    let coefficients =
+        polynomialFit(
+            currentDegree
+        );
+
+
+    let polynomialY = [];
+
+
+    for (
+        let i = 0;
+        i < xPlot.length;
+        i++
+    ) {
+
+        polynomialY.push(
+
+            polynomialPredict(
+                coefficients,
+                xPlot[i]
+            )
+
+        );
+
+    }
+
+
+    // ====================================================
+    // TRAINING MSE
+    // ====================================================
+
+    let mse = 0;
+
+
+    for (
+        let i = 0;
+        i < xData.length;
+        i++
+    ) {
+
+        let prediction =
+            polynomialPredict(
+                coefficients,
+                xData[i]
+            );
+
+
+        mse +=
+            Math.pow(
+                yData[i]
+                -
+                prediction,
+                2
+            );
+
+    }
+
+
+    mse /=
+        xData.length;
+
+
+    // ====================================================
+    // INTERPRETATION
+    // ====================================================
+
+    let interpretation = "";
+
+
+    if (
+        currentDegree <= 2
+    ) {
+
+        interpretation =
+            "UNDERFITTING";
+
+    }
+
+    else if (
+        currentDegree <= 5
+    ) {
+
+        interpretation =
+            "REASONABLE FIT";
+
+    }
+
+    else if (
+        currentDegree <= 9
+    ) {
+
+        interpretation =
+            "INCREASING COMPLEXITY";
+
+    }
+
+    else {
+
+        interpretation =
+            "POTENTIAL OVERFITTING";
+
+    }
+
+
+    // ====================================================
+    // UPDATE INFORMATION
+    // ====================================================
+
+    document
     .getElementById(
-        "nextButton"
+        "degreeValue"
     )
-    .addEventListener(
+    .innerHTML =
+        "Degree = "
+        +
+        currentDegree;
 
-        "click",
 
-        nextOrder
+    document
+    .getElementById(
+        "functionInfo"
+    )
+    .innerHTML =
+        currentFunction;
+
+
+    document
+    .getElementById(
+        "pointsInfo"
+    )
+    .innerHTML =
+        numberOfPoints;
+
+
+    document
+    .getElementById(
+        "noiseInfo"
+    )
+    .innerHTML =
+        noiseLevel.toFixed(2);
+
+
+    document
+    .getElementById(
+        "seedInfo"
+    )
+    .innerHTML =
+        randomSeed;
+
+
+    document
+    .getElementById(
+        "degreeInfo"
+    )
+    .innerHTML =
+        currentDegree;
+
+
+    document
+    .getElementById(
+        "mseInfo"
+    )
+    .innerHTML =
+        mse.toFixed(6);
+
+
+    document
+    .getElementById(
+        "interpretationInfo"
+    )
+    .innerHTML =
+        interpretation;
+
+
+    // ====================================================
+    // GRAPH DATA
+    // ====================================================
+
+    let graphData = [
+
+        {
+
+            x: xPlot,
+
+            y: yTrue,
+
+            mode: "lines",
+
+            name:
+                "True function: "
+                +
+                currentFunction,
+
+            line: {
+
+                dash: "dash",
+
+                width: 4
+
+            }
+
+        },
+
+
+        {
+
+            x: xData,
+
+            y: yData,
+
+            mode: "markers",
+
+            name:
+                numberOfPoints
+                +
+                " noisy observations",
+
+            marker: {
+
+                size: 9
+
+            }
+
+        },
+
+
+        {
+
+            x: xPlot,
+
+            y: polynomialY,
+
+            mode: "lines",
+
+            name:
+                "Polynomial degree = "
+                +
+                currentDegree,
+
+            line: {
+
+                width: 5
+
+            }
+
+        }
+
+    ];
+
+
+    // ====================================================
+    // Y AXIS RANGE
+    // ====================================================
+
+    let allY =
+        yData
+        .concat(yTrue)
+        .concat(polynomialY);
+
+
+    let ymin =
+        Math.min(
+            ...allY
+        );
+
+
+    let ymax =
+        Math.max(
+            ...allY
+        );
+
+
+    let margin =
+        (
+            ymax - ymin
+        )
+        *
+        0.10;
+
+
+    if (
+        margin < 0.5
+    ) {
+
+        margin = 0.5;
+
+    }
+
+
+    // ====================================================
+    // LAYOUT
+    // ====================================================
+
+    let layout = {
+
+        title: {
+
+            text:
+
+                "<b>"
+                +
+                "Polynomial Curve Fitting — Degree "
+                +
+                currentDegree
+                +
+                "</b>"
+                +
+                "<br>"
+                +
+                "<sup>"
+                +
+                "True function: y = "
+                +
+                currentFunction
+                +
+                " &nbsp; | &nbsp; "
+                +
+                "Training MSE = "
+                +
+                mse.toFixed(6)
+                +
+                " &nbsp; | &nbsp; "
+                +
+                interpretation
+                +
+                "</sup>",
+
+            x: 0.5,
+
+            font: {
+
+                size: 24
+
+            }
+
+        },
+
+
+        xaxis: {
+
+            title: "x",
+
+            range: [
+
+                0,
+
+                2 * Math.PI
+
+            ]
+
+        },
+
+
+        yaxis: {
+
+            title: "y",
+
+            range: [
+
+                ymin - margin,
+
+                ymax + margin
+
+            ]
+
+        },
+
+
+        template:
+            "plotly_white",
+
+
+        height: 650,
+
+
+        margin: {
+
+            l: 70,
+
+            r: 50,
+
+            t: 110,
+
+            b: 80
+
+        },
+
+
+        legend: {
+
+            orientation:
+                "h",
+
+            y:
+                -0.15
+
+        }
+
+    };
+
+
+    Plotly.react(
+
+        "plot",
+
+        graphData,
+
+        layout,
+
+        {
+
+            responsive:
+                true
+
+        }
 
     );
 
+}
 
-// ==========================================================
-// 15. PLAY BUTTON
-// ==========================================================
 
-document
+// ========================================================
+// PLAY / PAUSE
+// ========================================================
+
+function toggleAnimation() {
+
+
+    if (
+        isPlaying
+    ) {
+
+        stopAnimation();
+
+        return;
+
+    }
+
+
+    isPlaying =
+        true;
+
+
+    document
     .getElementById(
         "playButton"
     )
-    .addEventListener(
-
-        "click",
-
-        playAnimation
-
-    );
+    .innerHTML =
+        "⏸ Pause";
 
 
-// ==========================================================
-// 16. PAUSE BUTTON
-// ==========================================================
+    playNextDegree();
 
-document
+}
+
+
+// ========================================================
+// NEXT DEGREE
+// ========================================================
+
+function playNextDegree() {
+
+
+    if (
+        !isPlaying
+    ) {
+
+        return;
+
+    }
+
+
+    currentDegree++;
+
+
+    if (
+        currentDegree >
+        maxDegree
+    ) {
+
+        currentDegree = 1;
+
+    }
+
+
+    document
     .getElementById(
-        "pauseButton"
+        "degreeSlider"
     )
-    .addEventListener(
-
-        "click",
-
-        pauseAnimation
-
-    );
+    .value =
+        currentDegree;
 
 
-// ==========================================================
-// 17. RESET BUTTON
-// ==========================================================
+    updatePlot();
 
-document
+
+    animationTimer =
+        setTimeout(
+
+            playNextDegree,
+
+            speeds[
+                speedIndex
+            ]
+
+        );
+
+}
+
+
+// ========================================================
+// STOP ANIMATION
+// ========================================================
+
+function stopAnimation() {
+
+
+    isPlaying =
+        false;
+
+
+    if (
+        animationTimer
+    ) {
+
+        clearTimeout(
+            animationTimer
+        );
+
+        animationTimer =
+            null;
+
+    }
+
+
+    document
     .getElementById(
-        "resetButton"
+        "playButton"
     )
-    .addEventListener(
+    .innerHTML =
+        "▶ Play";
 
-        "click",
-
-        resetGraph
-
-    );
+}
 
 
-// ==========================================================
-// 18. SPEED BUTTON
-// ==========================================================
+// ========================================================
+// CHANGE SPEED
+// ========================================================
 
-document
+function changeSpeed() {
+
+
+    speedIndex++;
+
+
+    if (
+        speedIndex >=
+        speeds.length
+    ) {
+
+        speedIndex = 0;
+
+    }
+
+
+    let displayedSpeed =
+        Math.pow(
+            2,
+            speedIndex
+        );
+
+
+    document
     .getElementById(
         "speedButton"
     )
-    .addEventListener(
-
-        "click",
-
-        function() {{
-
-            speedIndex =
-
-                (
-                    speedIndex + 1
-                )
-                %
-                speeds.length;
+    .innerHTML =
+        "Speed: "
+        +
+        displayedSpeed
+        +
+        "×";
 
 
-            this.innerHTML =
-
-                "Speed: "
-                +
-                speedLabels[
-                    speedIndex
-                ];
+}
 
 
-            // Restart the timer if animation
-            // is currently running.
+// ========================================================
+// INITIALIZE
+// ========================================================
 
-            if (isPlaying) {{
-
-                clearTimeout(timer);
-
-                scheduleNextStep();
-
-            }}
-
-        }}
-
-    );
-
-
-// ==========================================================
-// 19. INITIALIZE
-// ==========================================================
-
-updatePlots();
+generateData();
 
 
 </script>
@@ -1435,76 +2040,14 @@ updatePlots();
 
 </body>
 
-</html>
-"""
+</html>"""
+
+def generate_html(output_file=HTML_FILE):
+    """Write the interactive polynomial curve-fitting HTML file."""
+    output_file = Path(output_file)
+    output_file.write_text(HTML, encoding="utf-8")
+    print(f"HTML generated successfully: {output_file.resolve()}")
 
 
-# ============================================================
-# 14. SAVE HTML FILE
-# ============================================================
-
-output_file = (
-
-    Path.cwd()
-    /
-    "polynomial_terms_vs_superposition_1_to_20.html"
-
-)
-
-
-with open(
-
-    output_file,
-
-    "w",
-
-    encoding="utf-8"
-
-) as file:
-
-    file.write(html)
-
-
-# ============================================================
-# 15. OPEN IN DEFAULT BROWSER
-# ============================================================
-
-webbrowser.open(
-    output_file.resolve().as_uri()
-)
-
-
-# ============================================================
-# 16. CONSOLE OUTPUT
-# ============================================================
-
-print()
-print("=" * 70)
-print("POLYNOMIAL TERMS VS SUPERPOSITION")
-print("=" * 70)
-print()
-print("Maximum order :", MAX_ORDER)
-print()
-print("Individual terms:")
-print("  y = x")
-print("  y = x²")
-print("  y = x³")
-print("  ...")
-print("  y = x²⁰")
-print()
-print("Superposition:")
-print("  y = x")
-print("  y = x + x²")
-print("  y = x + x² + x³")
-print("  ...")
-print("  y = x + x² + ... + x²⁰")
-print()
-print("Curve range    : -1 to +1")
-print("Visible X-axis : -2 to +2")
-print("Visible Y-axis : -5 to +5")
-print()
-print("HTML file:")
-print(output_file)
-print()
-print("Browser opened automatically.")
-print("=" * 70)
+if __name__ == "__main__":
+    generate_html()
