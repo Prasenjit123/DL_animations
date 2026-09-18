@@ -1,7 +1,0 @@
-gradio>=5.0,<6.0
-spaces
-torch==2.5.1
-torchvision==0.20.1
-numpy>=1.26
-pandas>=2.0
-pillow>=10.0
