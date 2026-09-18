@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.spydata
+.ipynb_checkpoints/
+data/
+*.tar.gz
+*.pth
+*.pt
+*.ckpt
+*.onnx
+results/
+output/
+patches/
+.DS_Store
+Thumbs.db
