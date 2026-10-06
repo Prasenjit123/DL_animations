@@ -476,17 +476,7 @@ with col3:
     st.metric("Activation", activation_mode)
 
 with col4:
-    st.metric("Theoretical RF", f"{rf} × {rf} px")
-
-if rf > 28:
-    st.caption("RF exceeds 28×28 input; display is clipped.")
-
-if rf > 28:
-    st.info(
-        f"{layer} has a theoretical receptive field of {rf}×{rf} pixels, "
-        "which is larger than the 28×28 MNIST input. "
-        "Therefore, the red RF box is clipped at the image boundaries."
-    )
+    st.metric("Theoretical RF", f"{rf} × {rf}")
 
 st.write(
     f"**Ranking rule:** for every image, take the maximum "
@@ -513,65 +503,69 @@ if run:
     st.divider()
 
     for start in range(0, len(results), 4):
-    row = results[start:start + 4]
-    columns = st.columns(4)
+        row = results[start:start + 4]
+        columns = st.columns(4)
 
-    for position, item in enumerate(row):
-        rank = start + position + 1
+        for position, item in enumerate(row):
+            rank = start + position + 1
 
-        with columns[position]:
-            image_tensor = dataset[item["dataset_index"]][0]
-            img28 = tensor_to_uint8(image_tensor)
+            with columns[position]:
+                image_tensor = dataset[item["dataset_index"]][0]
+                img28 = tensor_to_uint8(image_tensor)
 
-            crop, box, point = crop_rf(
-                img28,
-                item["fy"],
-                item["fx"],
-                layer,
-            )
-
-            original = make_original_image(
-                img28,
-                box,
-                point,
-                size=140,
-            )
-
-            crop_image = make_crop_image(
-                crop,
-                size=140,
-            )
-
-            st.markdown(
-                f"### #{rank} — digit {item['label']}"
-            )
-
-            st.write(
-                f"**Activation:** `{item['score']:.4f}`"
-            )
-
-            # Put original and RF crop side-by-side
-            img_col1, img_col2 = st.columns(2)
-
-            with img_col1:
-                st.image(
-                    original,
-                    caption="Original + RF",
-                    width=140,
+                crop, box, point = crop_rf(
+                    img28,
+                    item["fy"],
+                    item["fx"],
+                    layer,
                 )
 
-            with img_col2:
-                st.image(
-                    crop_image,
-                    caption="RF region",
-                    width=140,
+                original = make_original_image(
+                    img28,
+                    box,
+                    point,
+                    size=140,
                 )
 
-            st.caption(
-                f"Feature-map location: "
-                f"({item['fy']}, {item['fx']})\n\n"
-                f"RF = {rf}×{rf} px • jump = {jump}"
-            )
+                crop_image = make_crop_image(
+                    crop,
+                    size=140,
+                )
+
+                st.markdown(
+                    f"### #{rank} — digit {item['label']}"
+                )
+
+                st.write(
+                    f"**Activation:** `{item['score']:.4f}`"
+                )
+
+                img_col1, img_col2 = st.columns(2)
+
+                with img_col1:
+                    st.image(
+                        original,
+                        caption="Original + RF",
+                        width=140,
+                    )
+
+                with img_col2:
+                    st.image(
+                        crop_image,
+                        caption=(
+                            "Visible RF region within the 28×28 input"
+                            if rf > 28
+                            else "Theoretical RF crop"
+                        ),
+                        width=140,
+                    )
+
+                st.caption(
+                    f"Feature-map location: "
+                    f"({item['fy']}, {item['fx']})\n\n"
+                    f"RF = {rf}×{rf} px • jump = {jump}"
+                )
+
 else:
     st.info(
         "Select a convolutional layer and filter, then click "
