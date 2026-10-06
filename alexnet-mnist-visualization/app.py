@@ -476,7 +476,17 @@ with col3:
     st.metric("Activation", activation_mode)
 
 with col4:
-    st.metric("Theoretical RF", f"{rf} × {rf}")
+    st.metric("Theoretical RF", f"{rf} × {rf} px")
+
+if rf > 28:
+    st.caption("RF exceeds 28×28 input; display is clipped.")
+
+if rf > 28:
+    st.info(
+        f"{layer} has a theoretical receptive field of {rf}×{rf} pixels, "
+        "which is larger than the 28×28 MNIST input. "
+        "Therefore, the red RF box is clipped at the image boundaries."
+    )
 
 st.write(
     f"**Ranking rule:** for every image, take the maximum "
