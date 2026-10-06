@@ -513,64 +513,65 @@ if run:
     st.divider()
 
     for start in range(0, len(results), 4):
-        row = results[start:start + 4]
-        columns = st.columns(4)
+    row = results[start:start + 4]
+    columns = st.columns(4)
 
-        for position, item in enumerate(row):
-            rank = start + position + 1
+    for position, item in enumerate(row):
+        rank = start + position + 1
 
-            with columns[position]:
-                image_tensor = dataset[item["dataset_index"]][0]
-                img28 = tensor_to_uint8(image_tensor)
+        with columns[position]:
+            image_tensor = dataset[item["dataset_index"]][0]
+            img28 = tensor_to_uint8(image_tensor)
 
-                crop, box, point = crop_rf(
-                    img28,
-                    item["fy"],
-                    item["fx"],
-                    layer,
-                )
+            crop, box, point = crop_rf(
+                img28,
+                item["fy"],
+                item["fx"],
+                layer,
+            )
 
-                original = make_original_image(
-                    img28,
-                    box,
-                    point,
-                    size=180,
-                )
+            original = make_original_image(
+                img28,
+                box,
+                point,
+                size=140,
+            )
 
-                crop_image = make_crop_image(
-                    crop,
-                    size=180,
-                )
+            crop_image = make_crop_image(
+                crop,
+                size=140,
+            )
 
-                st.markdown(
-                    f"### #{rank} — digit {item['label']}"
-                )
+            st.markdown(
+                f"### #{rank} — digit {item['label']}"
+            )
 
-                st.write(
-                    f"**Activation:** `{item['score']:.4f}`"
-                )
+            st.write(
+                f"**Activation:** `{item['score']:.4f}`"
+            )
 
+            # Put original and RF crop side-by-side
+            img_col1, img_col2 = st.columns(2)
+
+            with img_col1:
                 st.image(
                     original,
-                    caption="Original + RF box + strongest point",
-                    width="stretch",
+                    caption="Original + RF",
+                    width=140,
                 )
 
+            with img_col2:
                 st.image(
                     crop_image,
-                    caption=(
-                        "Visible RF region within the 28×28 input"
-                        if rf > 28
-                        else "Theoretical RF crop"
-                    ),
-                    width="stretch",
+                    caption="RF region",
+                    width=140,
                 )
 
-                st.caption(
-                    f"Feature-map location: "
-                    f"({item['fy']}, {item['fx']})  \n"
-                    f"RF = {rf}×{rf} px • jump = {jump}"
-                )
+            st.caption(
+                f"Feature-map location: "
+                f"({item['fy']}, {item['fx']})\n\n"
+                f"RF = {rf}×{rf} px • jump = {jump}"
+            )
 else:
     st.info(
         "Select a convolutional layer and filter, then click "
