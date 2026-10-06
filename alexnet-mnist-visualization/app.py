@@ -558,7 +558,11 @@ if run:
 
                 st.image(
                     crop_image,
-                    caption="Exact theoretical RF crop",
+                    caption=(
+                        "Visible RF region within the 28×28 input"
+                        if rf > 28
+                        else "Theoretical RF crop"
+                    ),
                     width="stretch",
                 )
 
