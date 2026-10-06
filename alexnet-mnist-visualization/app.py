@@ -534,12 +534,12 @@ if run:
                     img28,
                     box,
                     point,
-                    size=240,
+                    size=180,
                 )
 
                 crop_image = make_crop_image(
                     crop,
-                    size=240,
+                    size=180,
                 )
 
                 st.markdown(
