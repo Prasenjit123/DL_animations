@@ -135,7 +135,7 @@ def forward_representations(x):
 # Target definitions
 # ---------------------------------------------------------------------
 TARGET_OPTIONS = [
-    "FC1 neuron — recommended (lecture-style hidden neuron)",
+    "FC1 neuron — recommended ( hidden neuron)",
     "FC2 neuron",
     "Conv1 neuron",
     "Conv2 neuron",
@@ -558,7 +558,7 @@ st.subheader("2. Input-pixel influence")
 
 visualization = st.radio(
     "Visualization",
-    ["Signed gradient — lecture style", "Gradient magnitude"],
+    ["Signed gradient", "Gradient magnitude"],
     horizontal=True,
     index=0
 )
@@ -637,22 +637,16 @@ st.divider()
 st.subheader("Interpretation")
 
 st.markdown(
-    r"""
-For a selected hidden neuron \(h_j\), the application computes
-
-\[
-\frac{\partial h_j}{\partial x_i}
-\]
-
-for the input pixels \(x_i\).
+    """
+For a selected hidden neuron \(h_j\), the application computes the
+gradient of that neuron with respect to the input pixels \(x_i\).
 
 - **Large magnitude:** a small change in that pixel can strongly
   affect the selected neuron.
 - **Small magnitude:** the neuron is locally less sensitive to that
   pixel.
 - The **signed-gradient** view preserves positive/negative channel
-  information and is closest to the direct-gradient visualization
-  discussed in the lecture.
+  information.
 
 ### Why the target layer matters
 
@@ -661,13 +655,14 @@ is localized.
 
 A fully connected neuron after flattening can depend on the entire
 feature representation, so its input influence can extend across the
-image. This is why **FC1 is the recommended target for reproducing
-the lecture's "flatten → hidden neuron → backpropagate to pixels"
-idea**.
+image.
 
 The image itself is never occluded or modified.
 """
 )
+
+st.latex(r"\frac{\partial h_j}{\partial x_i}")
+
 
 st.caption(
     "Pretrained AlexNet • ImageNet-1K • "
