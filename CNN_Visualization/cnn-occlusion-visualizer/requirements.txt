@@ -1,5 +1,6 @@
-streamlit>=1.40,<2
-torch>=2.5,<3
-torchvision>=0.20,<1
-numpy>=1.26,<3
-pillow>=10,<13
+streamlit
+torch
+torchvision
+pillow
+numpy
+streamlit-drawable-canvas==0.10.0

@@ -1,20 +1,16 @@
+import hashlib
+
+import numpy as np
 import streamlit as st
 import torch
+from PIL import Image
 from torchvision.models import alexnet, AlexNet_Weights
-from PIL import Image, ImageDraw
-import numpy as np
+from streamlit_drawable_canvas import st_canvas
 
-st.set_page_config(
-    page_title="CNN Occlusion Visualizer",
-    page_icon="🔍",
-    layout="wide",
-)
-
+st.set_page_config(page_title="CNN Occlusion Visualizer", page_icon="🔍", layout="centered")
 st.title("🔍 CNN Occlusion Experiment")
-st.write(
-    "Hide one region of an image and observe how much the CNN's "
-    "prediction changes."
-)
+st.caption("Drag the gray square directly over the image. Use the slider only to change patch size.")
+
 
 @st.cache_resource
 def load_model():
@@ -23,212 +19,183 @@ def load_model():
     model.eval()
     return model, weights.transforms(), weights.meta["categories"]
 
+
 model, preprocess, categories = load_model()
 
 
-def prepare_experiment_image(image, max_size=700):
-    """Resize for a compact classroom demonstration."""
-    img = image.copy()
-    img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-    return img
-
-
+@torch.inference_mode()
 def predict(image):
     x = preprocess(image).unsqueeze(0)
-    with torch.no_grad():
-        logits = model(x)
-        probs = torch.softmax(logits, dim=1)[0]
-
+    probs = torch.softmax(model(x), dim=1)[0]
     top_probs, top_indices = torch.topk(probs, 5)
     return probs, top_indices.tolist(), top_probs.tolist()
 
 
-def make_occluded_image(image, x, y, patch_size):
-    arr = np.array(image).copy()
-    arr[y:y + patch_size, x:x + patch_size, :] = 128
+def prepare_image(image, max_size=420):
+    image = image.convert("RGB").copy()
+    image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+    return image
+
+
+def clamp_xy(x, y, width, height, size):
+    x = max(0, min(int(round(x)), width - size))
+    y = max(0, min(int(round(y)), height - size))
+    return x, y
+
+
+def patch_json(x, y, size):
+    # Fabric coordinates are explicitly top-left coordinates.
+    return {
+        "version": "4.4.0",
+        "objects": [
+            {
+                "type": "rect",
+                "left": float(x),
+                "top": float(y),
+                "originX": "left",
+                "originY": "top",
+                "width": float(size),
+                "height": float(size),
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "angle": 0,
+                "fill": "rgba(128,128,128,0.72)",
+                "stroke": "rgba(220,40,40,1)",
+                "strokeWidth": 2,
+                "selectable": True,
+                "hasControls": False,
+                "lockScalingX": True,
+                "lockScalingY": True,
+                "lockRotation": True,
+            }
+        ],
+    }
+
+
+def occlude(image, x, y, size):
+    arr = np.asarray(image).copy()
+    x, y = int(x), int(y)
+    arr[y:y + size, x:x + size, :] = 128
     return Image.fromarray(arr)
 
 
-uploaded = st.file_uploader(
-    "Upload an image",
-    type=["jpg", "jpeg", "png"],
-)
-
+uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 if uploaded is None:
     st.info("Upload an image to begin.")
     st.stop()
 
-original = Image.open(uploaded).convert("RGB")
-image = prepare_experiment_image(original)
+image = prepare_image(Image.open(uploaded), max_size=420)
+width, height = image.width, image.height
 
-probs, top_indices, top_probs = predict(image)
+# Reset state when a different image is uploaded.
+image_id = hashlib.md5(np.asarray(image).tobytes()).hexdigest()
+if st.session_state.get("occlusion_image_id") != image_id:
+    st.session_state.occlusion_image_id = image_id
+    st.session_state.patch_size = min(80, width, height)
+    st.session_state.patch_x = max(0, (width - st.session_state.patch_size) // 2)
+    st.session_state.patch_y = max(0, (height - st.session_state.patch_size) // 2)
 
+
+# Original prediction
+probs, top_indices, _ = predict(image)
 target_idx = top_indices[0]
 target_label = categories[target_idx]
 original_probability = float(probs[target_idx])
 
-st.subheader("Original Prediction")
-
-metric_col, info_col = st.columns([1, 2])
-
-with metric_col:
-    st.metric(
-        "Top-1 class",
-        target_label,
-        f"{original_probability * 100:.2f}%"
-    )
-
-with info_col:
-    st.caption(
-        "The model's confidence is shown for this particular image. "
-        "It is NOT the model's overall classification accuracy."
-    )
-
-# Top-5 table
-top5_rows = []
-for rank, (idx, p) in enumerate(zip(top_indices, top_probs), start=1):
-    top5_rows.append(
-        {
-            "Rank": rank,
-            "Class": categories[idx],
-            "Probability": f"{p * 100:.2f}%",
-        }
-    )
-
-st.dataframe(
-    top5_rows,
-    hide_index=True,
-    use_container_width=False,
+st.markdown(
+    f"**Original Top-1:** {target_label} "
+    f"({original_probability * 100:.2f}%)"
 )
 
 st.divider()
 st.subheader("Single-Patch Occlusion")
 
-st.caption(
-    "Move the gray square over different regions. "
-    "The probability change is always measured for the ORIGINAL "
-    "top-1 class."
-)
-
-height, width = image.size[1], image.size[0]
-
-# Allow the patch to range from small local regions up to the
-# full size of the shorter image dimension.
 max_patch = min(width, height)
+old_size = int(st.session_state.patch_size)
+old_size = max(20, min(old_size, max_patch))
 
 patch_size = st.slider(
     "Occlusion patch size",
     min_value=20,
     max_value=max_patch,
-    value=min(80, max_patch),
+    value=old_size,
     step=10,
 )
+st.session_state.patch_size = patch_size
 
-max_x = width - patch_size
-max_y = height - patch_size
-
-x_position = st.slider(
-    "Patch horizontal position",
-    min_value=0,
-    max_value=max_x,
-    value=max_x // 2,
-    step=5,
-)
-
-y_position = st.slider(
-    "Patch vertical position",
-    min_value=0,
-    max_value=max_y,
-    value=max_y // 2,
-    step=5,
-)
-
-occluded = make_occluded_image(
-    image,
-    x_position,
-    y_position,
+# Keep the existing top-left position when the patch size changes.
+x, y = clamp_xy(
+    st.session_state.patch_x,
+    st.session_state.patch_y,
+    width,
+    height,
     patch_size,
 )
+st.session_state.patch_x = x
+st.session_state.patch_y = y
 
-occluded_probs, occluded_top_indices, occluded_top_probs = predict(occluded)
+# The canvas pixel dimensions and the displayed comparison images are identical.
+initial = patch_json(x, y, patch_size)
 
-# Always measure the original target class.
-occluded_target_probability = float(occluded_probs[target_idx])
-probability_change = occluded_target_probability - original_probability
-
-display_occluded = occluded.copy()
-draw = ImageDraw.Draw(display_occluded)
-draw.rectangle(
-    [
-        x_position,
-        y_position,
-        x_position + patch_size - 1,
-        y_position + patch_size - 1,
-    ],
-    outline=(220, 40, 40),
-    width=max(2, patch_size // 20),
+canvas_result = st_canvas(
+    fill_color="rgba(128,128,128,0.72)",
+    stroke_color="rgba(220,40,40,1)",
+    stroke_width=2,
+    background_color="white",
+    background_image=image,
+    background_image_fit="stretch",
+    update_streamlit=True,
+    height=height,
+    width=width,
+    drawing_mode="transform",
+    initial_drawing=initial,
+    display_toolbar=False,
+    key="occlusion_canvas",
 )
 
+# Read the position directly from the object returned by the canvas.
+# IMPORTANT: width/height are not used to infer position; only left/top are used.
+if canvas_result is not None and canvas_result.json_data:
+    objects = canvas_result.json_data.get("objects", [])
+    if objects:
+        obj = objects[0]
+        x = float(obj.get("left", x))
+        y = float(obj.get("top", y))
+        x, y = clamp_xy(x, y, width, height, patch_size)
+        st.session_state.patch_x = x
+        st.session_state.patch_y = y
+
+x = int(st.session_state.patch_x)
+y = int(st.session_state.patch_y)
+
+st.caption(f"Patch position: ({x}, {y})  •  Patch size: {patch_size} × {patch_size} px")
+
+# Generate the model input from EXACTLY the same x/y/size used by the canvas.
+occluded = occlude(image, x, y, patch_size)
+occluded_probs, occluded_top_indices, _ = predict(occluded)
+occluded_target_probability = float(occluded_probs[target_idx])
+change = occluded_target_probability - original_probability
+occluded_top_label = categories[occluded_top_indices[0]]
+
+st.divider()
 col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("### Original")
-    st.image(image, width=500)
-    st.metric(
-        f"{target_label} probability",
-        f"{original_probability * 100:.2f}%"
-    )
+    st.image(image, width=width)
+    st.metric("Target probability", f"{original_probability * 100:.2f}%")
 
 with col2:
     st.markdown("### Occluded")
-    st.image(display_occluded, width=500)
+    st.image(occluded, width=width)
     st.metric(
-        f"{target_label} probability",
+        "Target probability",
         f"{occluded_target_probability * 100:.2f}%",
-        delta=f"{probability_change * 100:.2f} percentage points",
+        delta=f"{change * 100:.2f} percentage points",
     )
 
-occluded_top_label = categories[occluded_top_indices[0]]
-
-st.write(
-    f"**Original top-1:** {target_label}  \n"
-    f"**After occlusion top-1:** {occluded_top_label}"
-)
-
-if probability_change < 0:
-    st.success(
-        f"The target-class probability decreased by "
-        f"{abs(probability_change) * 100:.2f} percentage points."
-    )
-elif probability_change > 0:
-    st.warning(
-        f"The target-class probability increased by "
-        f"{probability_change * 100:.2f} percentage points."
-    )
-else:
-    st.info("The target-class probability did not change.")
-
-st.subheader("Top-5 After Occlusion")
-
-occluded_top5_rows = []
-for rank, (idx, p) in enumerate(
-    zip(occluded_top_indices, occluded_top_probs), start=1
-):
-    occluded_top5_rows.append(
-        {
-            "Rank": rank,
-            "Class": categories[idx],
-            "Probability": f"{p * 100:.2f}%",
-        }
-    )
-
-st.dataframe(
-    occluded_top5_rows,
-    hide_index=True,
-    use_container_width=False,
-)
-
-st.divider()
+st.write(f"**Original Top-1:** {target_label}")
+st.write(f"**After occlusion Top-1:** {occluded_top_label}")
 
 with st.expander("What is being measured?"):
     st.latex(
@@ -237,20 +204,7 @@ with st.expander("What is being measured?"):
     )
     st.write(
         "A large negative change means that hiding that region reduced "
-        "the model's confidence in the original predicted class."
+        "the probability of the original predicted class."
     )
 
-with st.expander("About this version"):
-    st.write(
-        "This is still the single-patch version. The next stage will "
-        "automatically move the patch across the whole image and create "
-        "an occlusion-sensitivity heatmap."
-    )
-    st.write(
-        "For a stronger classroom example, use an image where the "
-        "object is centered and occupies a large part of the image."
-    )
-    st.write(
-        "Model: pretrained AlexNet on ImageNet-1K. "
-        "No training dataset is required."
-    )
+st.caption("Model: pretrained AlexNet on ImageNet-1K. No training is required.")
