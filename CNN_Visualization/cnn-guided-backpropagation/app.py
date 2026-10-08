@@ -348,193 +348,164 @@ x_probe = make_input_tensor(image)
 
 st.subheader("1. Select the target")
 
-target_kind = st.selectbox(
-    "Target type",
+target_type = st.selectbox(
+    "Target",
     [
-        "Convolutional feature-map neuron",
-        "Fully connected neuron",
+        "Hidden neuron",
         "Output class",
     ],
 )
 
-# ------------------------------------------------------------
-# Convolutional target
-# ------------------------------------------------------------
-if target_kind == "Convolutional feature-map neuron":
+if target_type == "Hidden neuron":
 
-    layer_labels = [
-        f"{name} • {channels} channels"
-        for _, name, channels in CONV_LAYERS
+    # A single layer selector intentionally contains BOTH convolutional
+    # and fully-connected hidden layers.
+    layer_options = [
+        "Conv1 • 64 channels",
+        "Conv2 • 192 channels",
+        "Conv3 • 384 channels",
+        "Conv4 • 256 channels",
+        "Conv5 • 256 channels",
+        "FC1 • 4096 neurons",
+        "FC2 • 4096 neurons",
     ]
 
     selected_layer = st.selectbox(
         "Layer",
-        layer_labels,
+        layer_options,
         index=2,
     )
 
-    layer_pos = layer_labels.index(selected_layer)
-    feature_index, layer_name, num_channels = CONV_LAYERS[layer_pos]
+    if selected_layer.startswith("Conv"):
+        layer_number = int(selected_layer[4])
 
-    with torch.no_grad():
-        activation_probe = get_conv_activation(
-            standard_model,
-            x_probe,
-            feature_index,
+        feature_index, layer_name, channels_expected = next(
+            item for item in CONV_LAYERS
+            if item[1] == f"Conv{layer_number}"
         )
 
-    _, channels, height, width = activation_probe.shape
+        with torch.no_grad():
+            activation_probe = get_conv_activation(
+                standard_model,
+                x_probe,
+                feature_index,
+            )
 
-    selection_mode = st.radio(
-        "Neuron selection",
-        [
-            "Strongest active neuron",
-            "Choose manually",
-        ],
-        horizontal=True,
-    )
+        _, channels, height, width = activation_probe.shape
 
-    if selection_mode == "Strongest active neuron":
-
-        flat_index = int(
-            torch.argmax(activation_probe[0]).item()
+        selection_mode = st.radio(
+            "Neuron selection",
+            [
+                "Strongest active neuron",
+                "Choose manually",
+            ],
+            horizontal=True,
         )
 
-        channel = flat_index // (height * width)
-        remainder = flat_index % (height * width)
-        row = remainder // width
-        col = remainder % width
+        if selection_mode == "Strongest active neuron":
+            flat_index = int(
+                torch.argmax(activation_probe[0]).item()
+            )
+            channel = flat_index // (height * width)
+            remainder = flat_index % (height * width)
+            row = remainder // width
+            col = remainder % width
+
+        else:
+            c1, c2, c3 = st.columns(3)
+
+            with c1:
+                channel = int(st.number_input(
+                    "Channel",
+                    min_value=0,
+                    max_value=channels - 1,
+                    value=0,
+                    step=1,
+                ))
+
+            with c2:
+                row = int(st.number_input(
+                    "Row",
+                    min_value=0,
+                    max_value=height - 1,
+                    value=height // 2,
+                    step=1,
+                ))
+
+            with c3:
+                col = int(st.number_input(
+                    "Column",
+                    min_value=0,
+                    max_value=width - 1,
+                    value=width // 2,
+                    step=1,
+                ))
 
         st.caption(
             f"Selected {layer_name}: channel {channel}, "
             f"position ({row}, {col})"
         )
 
+        target_kind = "Convolutional feature-map neuron"
+        conv_target_index = feature_index
+        fc_target_index = None
+        class_index = None
+
     else:
+        # Fully connected hidden neuron
+        fc_name = "FC1" if selected_layer.startswith("FC1") else "FC2"
 
-        c1, c2, c3 = st.columns(3)
+        classifier_index, layer_name, num_neurons = next(
+            item for item in FC_LAYERS
+            if item[1] == fc_name
+        )
 
-        with c1:
-            channel = st.number_input(
-                "Channel",
+        with torch.no_grad():
+            fc_probe = get_fc_activation(
+                standard_model,
+                x_probe,
+                classifier_index,
+            )
+
+        selection_mode = st.radio(
+            "Neuron selection",
+            [
+                "Strongest active neuron",
+                "Choose manually",
+            ],
+            horizontal=True,
+        )
+
+        if selection_mode == "Strongest active neuron":
+            positive = fc_probe[0].clone()
+            positive[positive <= 0] = -torch.inf
+
+            if torch.isfinite(positive).any():
+                neuron = int(torch.argmax(positive).item())
+            else:
+                neuron = int(torch.argmax(fc_probe[0]).item())
+        else:
+            neuron = int(st.number_input(
+                "Neuron",
                 min_value=0,
-                max_value=channels - 1,
+                max_value=num_neurons - 1,
                 value=0,
                 step=1,
-            )
-
-        with c2:
-            row = st.number_input(
-                "Row",
-                min_value=0,
-                max_value=height - 1,
-                value=height // 2,
-                step=1,
-            )
-
-        with c3:
-            col = st.number_input(
-                "Column",
-                min_value=0,
-                max_value=width - 1,
-                value=width // 2,
-                step=1,
-            )
-
-        channel = int(channel)
-        row = int(row)
-        col = int(col)
+            ))
 
         st.caption(
-            f"Selected {layer_name}: channel {channel}, "
-            f"position ({row}, {col})"
+            f"Selected {layer_name}: neuron {neuron}"
         )
 
-    conv_target_index = feature_index
-    fc_target_index = None
-    class_index = None
+        target_kind = "Fully connected neuron"
+        conv_target_index = None
+        fc_target_index = classifier_index
+        channel = neuron
+        row = None
+        col = None
+        class_index = None
 
-
-# ------------------------------------------------------------
-# Fully connected target
-# ------------------------------------------------------------
-elif target_kind == "Fully connected neuron":
-
-    layer_labels = [
-        f"{name} • {neurons} neurons"
-        for _, name, neurons in FC_LAYERS
-    ]
-
-    selected_layer = st.selectbox(
-        "Layer",
-        layer_labels,
-        index=0,
-    )
-
-    layer_pos = layer_labels.index(selected_layer)
-    classifier_index, layer_name, num_neurons = FC_LAYERS[layer_pos]
-
-    with torch.no_grad():
-        fc_probe = get_fc_activation(
-            standard_model,
-            x_probe,
-            classifier_index,
-        )
-
-    selection_mode = st.radio(
-        "Neuron selection",
-        [
-            "Strongest active neuron",
-            "Choose manually",
-        ],
-        horizontal=True,
-    )
-
-    if selection_mode == "Strongest active neuron":
-
-        # FC activation here is the linear value immediately before
-        # the following ReLU. Pick the largest positive activation.
-        positive = fc_probe[0].clone()
-        positive[positive <= 0] = -torch.inf
-
-        neuron = int(
-            torch.argmax(positive).item()
-        )
-
-        if not torch.isfinite(positive[neuron]):
-            neuron = int(
-                torch.argmax(fc_probe[0]).item()
-            )
-
-    else:
-
-        neuron = st.number_input(
-            "Neuron",
-            min_value=0,
-            max_value=num_neurons - 1,
-            value=0,
-            step=1,
-        )
-
-        neuron = int(neuron)
-
-    st.caption(
-        f"Selected {layer_name}: neuron {neuron}"
-    )
-
-    conv_target_index = None
-    fc_target_index = classifier_index
-    channel = neuron
-    row = None
-    col = None
-    class_index = None
-
-
-# ------------------------------------------------------------
-# Output-class target
-# ------------------------------------------------------------
 else:
-
     categories = weights.meta["categories"]
 
     with torch.no_grad():
@@ -543,21 +514,13 @@ else:
             x_probe,
         )[0]
 
-    probabilities = torch.softmax(
-        logits_probe,
-        dim=0,
-    )
-
-    top_class = int(
-        torch.argmax(probabilities).item()
-    )
+    probabilities = torch.softmax(logits_probe, dim=0)
+    top_class = int(torch.argmax(probabilities).item())
 
     class_labels = [
         f"{i}: {categories[i]}"
         for i in range(len(categories))
     ]
-
-    default_label = class_labels[top_class]
 
     selected_class_label = st.selectbox(
         "ImageNet class",
@@ -569,15 +532,14 @@ else:
         selected_class_label.split(":", 1)[0]
     )
 
-    probability = float(
-        probabilities[class_index].item()
-    )
+    probability = float(probabilities[class_index].item())
 
     st.caption(
         f"Selected class: {categories[class_index]} "
         f"• current probability: {probability:.2%}"
     )
 
+    target_kind = "Output class"
     conv_target_index = None
     fc_target_index = None
     channel = None
