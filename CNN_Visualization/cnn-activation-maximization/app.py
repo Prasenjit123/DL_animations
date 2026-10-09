@@ -122,14 +122,57 @@ st.info(
 )
 
 st.subheader("1. Choose target classes")
-n_classes = st.slider("Number of target classes", 1, 4, 2, 1)
-class_options = [f"{i}: {name}" for i, name in enumerate(categories)]
-default_indices = [968, 543, 281, 751]  # cup, dumbbell, tabby cat, raccoon (ImageNet labels may vary)
+
+# A compact, teaching-oriented default list of recognizable and varied classes.
+# Indices come from the pretrained torchvision ImageNet-1K category list.
+teaching_class_indices = [
+    207,  # golden retriever
+    292,  # tiger cat
+    386,  # African elephant
+    504,  # coffee mug
+    779,  # school bus
+    546,  # electric guitar
+    817,  # sports car
+    963,  # pizza
+    701,  # parachute
+]
+
+advanced_classes = st.checkbox(
+    "Advanced mode: show all 1,000 ImageNet classes",
+    value=False,
+)
+
+if advanced_classes:
+    available_indices = list(range(len(categories)))
+    st.caption(
+        "Advanced mode is intended for exploration. For a clear classroom comparison, "
+        "the curated list is usually easier to interpret."
+    )
+else:
+    available_indices = teaching_class_indices
+
+class_options = [f"{i}: {categories[i]}" for i in available_indices]
+n_classes = st.slider(
+    "Number of target classes to compare",
+    min_value=1,
+    max_value=min(4, len(available_indices)),
+    value=min(3, len(available_indices)),
+    step=1,
+)
+
+default_indices = [207, 504, 963]  # golden retriever, coffee mug, pizza
 selected = []
 for i in range(n_classes):
+    default_index = default_indices[i] if i < len(default_indices) else available_indices[0]
+    if default_index not in available_indices:
+        default_index = available_indices[0]
+    option_indices = available_indices
+    default_position = option_indices.index(default_index)
     chosen = st.selectbox(
-        f"Target class {i + 1}", class_options,
-        index=default_indices[i], key=f"target_class_{i}"
+        f"Target class {i + 1}",
+        class_options,
+        index=default_position,
+        key=f"target_class_{i}_{'advanced' if advanced_classes else 'curated'}",
     )
     selected.append(int(chosen.split(":", 1)[0]))
 
