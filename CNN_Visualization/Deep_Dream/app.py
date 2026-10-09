@@ -1,251 +1,434 @@
+"""A Streamlit teaching app for object-emphasized, multi-octave DeepDream."""
+from __future__ import annotations
+
 import io
+import random
+
 import numpy as np
 import pandas as pd
 import streamlit as st
 import torch
 import torch.nn.functional as F
-from PIL import Image, ImageFilter
-from torchvision.models import alexnet, AlexNet_Weights
+from PIL import Image
+from torchvision.models import GoogLeNet_Weights, googlenet
 
-st.set_page_config(page_title="Deep Dream — Multi-scale", page_icon="🌀", layout="wide")
-st.title("Deep Dream: Multi-scale Feature Amplification")
+GOOGLE_ARTICLE = "https://research.google/blog/inceptionism-going-deeper-into-neural-networks/"
+GOOGLE_CODE = "https://github.com/google/deepdream"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+WEIGHTS = GoogLeNet_Weights.DEFAULT
+IMAGENET_CATEGORIES = WEIGHTS.meta["categories"]
+
+# ImageNet normalization expected by the pretrained weights.
+IMAGENET_MEAN = torch.tensor((0.485, 0.456, 0.406), device=DEVICE).view(1, 3, 1, 1)
+IMAGENET_STD = torch.tensor((0.229, 0.224, 0.225), device=DEVICE).view(1, 3, 1, 1)
+
+LAYER_NAMES = {
+    "Inception 3a — textures and edges": "inception3a",
+    "Inception 3b — repeated motifs": "inception3b",
+    "Inception 4a — object parts": "inception4a",
+    "Inception 4b — object parts": "inception4b",
+    "Inception 4c — classic DeepDream layer": "inception4c",
+    "Inception 4d — complex patterns": "inception4d",
+    "Inception 4e — high-level object patterns": "inception4e",
+    "Inception 5a — high-level patterns": "inception5a",
+    "Inception 5b — high-level patterns": "inception5b",
+}
+
+# Values must match the category names used by torchvision's pretrained weights.
+CLASS_PRESETS = [
+    ("Bird — bald eagle", "bald eagle"),
+    ("Bird — great grey owl", "great grey owl"),
+    ("Bird — kite", "kite"),
+    ("Bird — robin", "robin"),
+    ("Church tower / bell cote", "bell cote"),
+    ("Church building", "church"),
+    ("Castle", "castle"),
+    ("Monastery", "monastery"),
+    ("Palace", "palace"),
+    ("Mosque", "mosque"),
+    ("Dog — golden retriever", "golden retriever"),
+    ("Cat — tabby", "tabby, tabby cat"),
+    ("Butterfly — monarch", "monarch, monarch butterfly"),
+    ("Goldfish", "goldfish"),
+    ("Airplane", "airliner"),
+    ("Ship", "container ship"),
+    ("Spider", "barn spider"),
+]
+CLASS_PRESETS = [(label, name) for label, name in CLASS_PRESETS if name in IMAGENET_CATEGORIES]
+CLASS_INDEX = {label: IMAGENET_CATEGORIES.index(name) for label, name in CLASS_PRESETS}
+
+st.set_page_config(page_title="CNN DeepDream Lab", page_icon="🌌", layout="wide")
+st.title("CNN DeepDream Lab")
 st.write(
-    "A classic DeepDream-style workflow: optimize at several image scales, use gentle "
-    "gradient-ascent steps, and retain the original image structure. AlexNet weights stay fixed."
+    "Upload a real image and let a pretrained CNN amplify patterns it detects. "
+    "For more recognizable forms, focus on higher-level features or guide the dream "
+    "toward an ImageNet object such as a bird or a church tower."
 )
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MEAN = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
-STD = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
-
-# AlexNet feature indices after ReLU: non-negative activations.
-LAYERS = {
-    "Conv1 — edges / colour contrasts": 1,
-    "Conv2 — textures": 4,
-    "Conv3 — patterns": 7,
-    "Conv4 — complex patterns": 9,
-    "Conv5 — visual parts": 11,
-}
 
 @st.cache_resource
 def load_model():
-    model = alexnet(weights=AlexNet_Weights.DEFAULT).to(DEVICE).eval()
-    for p in model.parameters():
-        p.requires_grad_(False)
-    return model
+    """Load a frozen ImageNet GoogLeNet feature extractor and classifier."""
+    net = googlenet(weights=WEIGHTS).to(DEVICE).eval()
+    for parameter in net.parameters():
+        parameter.requires_grad_(False)
+    return net
 
-def read_image(file, max_side=384):
-    im = Image.open(file).convert("RGB")
-    scale = min(1.0, max_side / max(im.size))
-    if scale < 1:
-        im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), Image.Resampling.LANCZOS)
-    arr = np.asarray(im).astype(np.float32) / 255.0
-    ten = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0).to(DEVICE)
-    return im, ten
 
-def to_pil(t):
-    arr = t.detach().clamp(0, 1)[0].permute(1, 2, 0).cpu().numpy()
-    return Image.fromarray((arr * 255).round().astype(np.uint8))
+def load_image(upload, max_side: int) -> tuple[Image.Image, torch.Tensor]:
+    image = Image.open(upload).convert("RGB")
+    scale = min(1.0, float(max_side) / max(image.size))
+    if scale < 1.0:
+        image = image.resize(
+            (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+    array = np.asarray(image, dtype=np.float32) / 255.0
+    tensor = torch.from_numpy(array).permute(2, 0, 1).unsqueeze(0).to(DEVICE)
+    return image, tensor
 
-def png_bytes(im):
-    buf = io.BytesIO()
-    im.save(buf, format="PNG")
-    return buf.getvalue()
 
-def features_at(model, img01, layer_idx):
-    x = (img01 - MEAN) / STD
-    for idx, layer in enumerate(model.features):
-        x = layer(x)
-        if idx == layer_idx:
-            return x
-    raise RuntimeError("Target layer was not found.")
+def tensor_to_pil(tensor: torch.Tensor) -> Image.Image:
+    array = tensor.detach().clamp(0, 1)[0].permute(1, 2, 0).cpu().numpy()
+    return Image.fromarray((array * 255.0).round().astype(np.uint8))
 
-def variation(x):
-    return (x[:, :, 1:, :] - x[:, :, :-1, :]).abs().mean() + (x[:, :, :, 1:] - x[:, :, :, :-1]).abs().mean()
 
-def objective_for(activation, channel, mode, row, col):
-    fmap = activation[:, channel]
-    if mode == "Single spatial neuron":
-        y = min(max(int(row), 0), fmap.shape[1] - 1)
-        x = min(max(int(col), 0), fmap.shape[2] - 1)
-        v = fmap[0, y, x]
-        return v.square()
-    if mode == "Strongest spatial neuron":
-        return fmap.flatten().max().square()
-    # Mean squared activation rewards the selected channel over the spatial map.
-    return fmap.square().mean()
+def png_bytes(image: Image.Image) -> bytes:
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
 
-def blur_tensor(x, sigma):
-    """Apply a mild Gaussian blur to gradients, suppressing pixel-scale noise."""
-    if sigma <= 0:
-        return x
-    # PIL blur is not differentiable, but this is applied to gradients only.
-    arr = x.detach().cpu().numpy()[0].transpose(1, 2, 0)
-    im = Image.fromarray(np.uint8(np.clip((arr - arr.min()) / (arr.max() - arr.min() + 1e-8), 0, 1) * 255))
-    im = im.filter(ImageFilter.GaussianBlur(radius=float(sigma)))
-    out = np.asarray(im).astype(np.float32) / 255.0
-    # Preserve the original gradient scale after blur.
-    out = (out - out.mean()) / (out.std() + 1e-8) * (x.detach().std().cpu().item() + 1e-8)
-    return torch.from_numpy(out.transpose(2, 0, 1)).unsqueeze(0).to(x.device, dtype=x.dtype)
 
-def optimize_octaves(model, original, layer_idx, channel, target_mode, row, col,
-                     octaves, steps_per_octave, step_size, tv_weight,
-                     preserve_weight, dream_mix, progress, status):
-    # Multi-scale optimization: start at reduced resolution, then carry the
-    # residual into progressively larger scales, a common DeepDream technique.
-    _, _, H, W = original.shape
-    scales = np.linspace(0.55, 1.0, int(octaves))
-    current = F.interpolate(original, scale_factor=float(scales[0]), mode="bilinear", align_corners=False)
-    current = current.detach()
-    original_pyramid = [
-        F.interpolate(original, size=(max(32, round(H*s)), max(32, round(W*s))),
-                      mode="bilinear", align_corners=False)
-        for s in scales
-    ]
-    rows = []
-    total_steps = int(octaves) * int(steps_per_octave)
+def forward_with_activation(
+    model: torch.nn.Module, image_01: torch.Tensor, layer_name: str
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return the selected feature map and final ImageNet logits, with gradients intact."""
+    captured: dict[str, torch.Tensor] = {}
+
+    def hook(_module, _inputs, output):
+        if not isinstance(output, torch.Tensor):
+            raise TypeError(f"Layer {layer_name} returned an unexpected output type.")
+        captured["value"] = output
+
+    handle = getattr(model, layer_name).register_forward_hook(hook)
+    try:
+        output = model((image_01 - IMAGENET_MEAN) / IMAGENET_STD)
+    finally:
+        handle.remove()
+    if "value" not in captured:
+        raise RuntimeError(f"No activation was captured from {layer_name}.")
+    logits = output.logits if hasattr(output, "logits") else output
+    return captured["value"], logits
+
+
+def get_activation(model: torch.nn.Module, image_01: torch.Tensor, layer_name: str) -> torch.Tensor:
+    """Convenience wrapper for reporting an activation map."""
+    return forward_with_activation(model, image_01, layer_name)[0]
+
+
+def choose_channels(activation: torch.Tensor, count: int) -> torch.Tensor:
+    """Select channels that respond most strongly to the starting image."""
+    scores = activation.detach().abs().mean(dim=(0, 2, 3))
+    return torch.topk(scores, k=min(int(count), activation.shape[1])).indices
+
+
+def feature_objective(
+    activation: torch.Tensor,
+    focused_channels: torch.Tensor | None,
+) -> torch.Tensor:
+    """Amplify layer features, with optional focus on the most active channels."""
+    if focused_channels is not None:
+        activation = activation.index_select(1, focused_channels)
+    # The linear term encourages broad feature response; the quadratic term
+    # gives the already-strong patterns more influence without relying on it alone.
+    return activation.mean() + 0.25 * activation.square().mean()
+
+
+def smooth_gradient(gradient: torch.Tensor, passes: int) -> torch.Tensor:
+    """Low-pass smooth the update so it does not overemphasize pixel-scale noise."""
+    result = gradient
+    for _ in range(int(passes)):
+        result = F.avg_pool2d(result, kernel_size=5, stride=1, padding=2)
+    return result
+
+
+def total_variation(image: torch.Tensor) -> torch.Tensor:
+    vertical = (image[:, :, 1:, :] - image[:, :, :-1, :]).abs().mean()
+    horizontal = (image[:, :, :, 1:] - image[:, :, :, :-1]).abs().mean()
+    return vertical + horizontal
+
+
+def build_octaves(image: torch.Tensor, octave_count: int, octave_scale: float = 1.45) -> list[torch.Tensor]:
+    """Create progressively smaller image scales while preserving aspect ratio."""
+    octaves = [image]
+    for _ in range(1, int(octave_count)):
+        previous = octaves[-1]
+        height = max(64, round(previous.shape[-2] / octave_scale))
+        width = max(64, round(previous.shape[-1] / octave_scale))
+        if (height, width) == previous.shape[-2:]:
+            break
+        octaves.append(
+            F.interpolate(previous, size=(height, width), mode="bilinear", align_corners=False)
+        )
+    return octaves
+
+
+def run_deepdream(
+    model: torch.nn.Module,
+    original: torch.Tensor,
+    layer_name: str,
+    octave_count: int,
+    iterations_per_octave: int,
+    step_size: float,
+    jitter: int,
+    smoothing_passes: int,
+    tv_weight: float,
+    blend: float,
+    focused_channel_count: int | None,
+    target_class_index: int | None,
+    class_guidance_strength: float,
+    progress_bar,
+    status_area,
+) -> tuple[torch.Tensor, pd.DataFrame, float, float, float | None, float | None]:
+    """Amplify CNN patterns with correctly signed gradient ascent over image scales."""
+    octaves = build_octaves(original, octave_count)
+    total_steps = len(octaves) * int(iterations_per_octave)
     completed = 0
+    history: list[dict] = []
 
-    for octave_idx, base in enumerate(original_pyramid):
-        if octave_idx == 0:
-            current = F.interpolate(current, size=base.shape[-2:], mode="bilinear", align_corners=False)
-        else:
-            # Preserve detail discovered at the previous scale, but softly blend
-            # with the original at this scale to prevent unbounded drift.
-            current = F.interpolate(current, size=base.shape[-2:], mode="bilinear", align_corners=False)
-            current = (0.82 * current + 0.18 * base).detach()
+    with torch.no_grad():
+        start_activation, start_logits = forward_with_activation(model, original, layer_name)
+        focused_channels = (
+            choose_channels(start_activation, focused_channel_count)
+            if focused_channel_count is not None else None
+        )
+        initial_feature_objective = float(feature_objective(start_activation, focused_channels).cpu())
+        initial_probability = (
+            float(torch.softmax(start_logits, dim=1)[0, target_class_index].cpu())
+            if target_class_index is not None else None
+        )
 
-        image = torch.nn.Parameter(current.clone())
-        optimizer = torch.optim.Adam([image], lr=float(step_size))
-        for inner in range(int(steps_per_octave)):
-            optimizer.zero_grad(set_to_none=True)
-            bounded = image.clamp(0, 1)
-            act = features_at(model, bounded, layer_idx)
-            obj = objective_for(act, channel, target_mode, row, col)
-            smooth = variation(bounded)
-            preserve = (bounded - base).square().mean()
-            # Maximize activation while penalizing noise and large drift.
-            loss = -obj + float(tv_weight) * smooth + float(preserve_weight) * preserve
-            loss.backward()
+    # Start small, then upscale the detail residual into the next octave.
+    detail = torch.zeros_like(octaves[-1])
+    dreamed = None
+
+    for octave_index, base in enumerate(reversed(octaves)):
+        if detail.shape[-2:] != base.shape[-2:]:
+            detail = F.interpolate(detail, size=base.shape[-2:], mode="bilinear", align_corners=False)
+        image = (base + detail).clamp(0.0, 1.0).detach().requires_grad_(True)
+
+        for iteration in range(int(iterations_per_octave)):
+            if image.grad is not None:
+                image.grad = None
+            if jitter > 0:
+                shift_y = random.randint(-int(jitter), int(jitter))
+                shift_x = random.randint(-int(jitter), int(jitter))
+            else:
+                shift_y = shift_x = 0
+            shifted_image = torch.roll(image, shifts=(shift_y, shift_x), dims=(2, 3))
+
+            activation, logits = forward_with_activation(model, shifted_image.clamp(0.0, 1.0), layer_name)
+            feature_score = feature_objective(activation, focused_channels)
+            objective = feature_score
+            target_probability = None
+            if target_class_index is not None:
+                # Log-probability pushes the selected class relative to competing classes.
+                target_log_probability = F.log_softmax(logits, dim=1)[0, target_class_index]
+                objective = objective + float(class_guidance_strength) * target_log_probability
+                target_probability = float(torch.softmax(logits.detach(), dim=1)[0, target_class_index].cpu())
+
+            smoothness = total_variation(shifted_image.clamp(0.0, 1.0))
+            # IMPORTANT: this is gradient ASCENT on the feature/class objective.
+            # Adding the gradient of -objective (as in the previous version) reverses
+            # the sign and suppresses features instead of amplifying them.
+            optimization_objective = objective - float(tv_weight) * smoothness
+            optimization_objective.backward()
 
             with torch.no_grad():
-                if image.grad is not None:
-                    grad = image.grad
-                    # Mild spatial gradient smoothing via average pooling.
-                    grad = F.avg_pool2d(grad, kernel_size=3, stride=1, padding=1)
-                    # Normalize conservatively; avoid the very large steps that
-                    # can cause rainbow colour explosions.
-                    scale = grad.abs().mean().clamp_min(1e-8)
-                    image.grad.copy_(grad / scale)
-
-            optimizer.step()
-            with torch.no_grad():
-                image.clamp_(0, 1)
+                gradient = smooth_gradient(image.grad, smoothing_passes)
+                gradient_scale = gradient.abs().mean().clamp_min(1e-8)
+                image.add_(float(step_size) * gradient / gradient_scale)
+                image.clamp_(0.0, 1.0)
 
             completed += 1
-            rows.append({
-                "step": completed,
-                "octave": octave_idx + 1,
-                "activation_objective": float(obj.detach().cpu()),
-                "total_variation": float(smooth.detach().cpu()),
-                "preservation_loss": float(preserve.detach().cpu()),
-                "loss": float(loss.detach().cpu()),
+            history.append({
+                "iteration": completed,
+                "octave": len(octaves) - octave_index,
+                "feature_objective": float(feature_score.detach().cpu()),
+                "target_class_probability": target_probability,
+                "total_variation": float(smoothness.detach().cpu()),
             })
-            if completed % max(1, total_steps // 40) == 0 or completed == total_steps:
-                progress.progress(completed / total_steps)
-                status.caption(f"Octave {octave_idx + 1}/{octaves} · step {inner + 1}/{steps_per_octave}")
+            if completed == total_steps or completed % max(1, total_steps // 35) == 0:
+                progress_bar.progress(completed / total_steps)
+                status_area.caption(
+                    f"Scale {octave_index + 1}/{len(octaves)} · "
+                    f"iteration {iteration + 1}/{iterations_per_octave} · "
+                    f"feature objective {float(feature_score.detach().cpu()):.5g}"
+                )
 
-        current = image.detach().clamp(0, 1)
+        dreamed = image.detach()
+        detail = dreamed - base
 
-    dreamed = F.interpolate(current, size=(H, W), mode="bilinear", align_corners=False)
-    # Final restrained blend: keep the original scene recognizable.
-    result = ((1.0 - float(dream_mix)) * original + float(dream_mix) * dreamed).clamp(0, 1)
-    return result, pd.DataFrame(rows)
+    assert dreamed is not None
+    dreamed = F.interpolate(dreamed, size=original.shape[-2:], mode="bilinear", align_corners=False)
+    result = ((1.0 - float(blend)) * original + float(blend) * dreamed).clamp(0.0, 1.0)
+
+    with torch.no_grad():
+        end_activation, end_logits = forward_with_activation(model, result, layer_name)
+        final_feature_objective = float(feature_objective(end_activation, focused_channels).cpu())
+        final_probability = (
+            float(torch.softmax(end_logits, dim=1)[0, target_class_index].cpu())
+            if target_class_index is not None else None
+        )
+    return result, pd.DataFrame(history), initial_feature_objective, final_feature_objective, initial_probability, final_probability
+
 
 model = load_model()
 with st.sidebar:
-    st.header("Experiment settings")
-    uploaded = st.file_uploader("Upload a reference image", type=["png", "jpg", "jpeg", "webp"])
-    layer_name = st.selectbox("Target layer", list(LAYERS.keys()), index=2)
-    target_mode = st.selectbox("Activation target",
-        ["Mean channel activation", "Strongest spatial neuron", "Single spatial neuron"])
-    octaves = st.slider("Image scales (octaves)", 2, 4, 3)
-    steps_per_octave = st.slider("Steps per scale", 5, 50, 15, 5)
-    step_size = st.select_slider("Pixel update strength",
-        options=[0.0001, 0.0002, 0.0005, 0.001, 0.002], value=0.0005)
-    tv_weight = st.slider("Smoothness regularization", 0.0, 0.30, 0.10, 0.01)
-    preserve_weight = st.slider("Preserve image structure", 0.05, 2.0, 0.60, 0.05)
-    dream_mix = st.slider("Dream effect strength", 0.10, 0.85, 0.45, 0.05)
-    run = st.button("Generate Deep Dream", type="primary", use_container_width=True)
-
-if uploaded is None:
-    st.info("Upload a reference image to begin. Clouds, trees, buildings, and animals are useful examples.")
-    st.markdown(
-        "**Method:** select a CNN feature, compute its gradient with respect to image pixels, "
-        "and amplify it across multiple image scales. The network weights remain fixed."
+    st.header("DeepDream controls")
+    uploaded_file = st.file_uploader("Starting image", type=["png", "jpg", "jpeg", "webp"])
+    max_side = st.select_slider(
+        "Maximum image dimension (pixels)", options=[192, 256, 320, 384, 512, 640], value=512
     )
+    layer_label = st.selectbox("Feature layer", list(LAYER_NAMES.keys()), index=6)
+    focus_mode = st.selectbox(
+        "Feature emphasis",
+        ["Focused channels (stronger motifs)", "Broad layer exploration"],
+        index=0,
+        help="Focused mode amplifies the channels that respond most strongly to the input image.",
+    )
+    focused_channel_count = st.slider("Channels to emphasize", 8, 64, 24, 8)
+    object_options = ["No specific object — classic DeepDream"] + [label for label, _ in CLASS_PRESETS]
+    target_label = st.selectbox(
+        "Object to emphasize (optional)", object_options, index=1,
+        help="Object guidance adds a classifier objective. This is a guided extension, not the original class-free DeepDream objective.",
+    )
+    class_guidance_strength = st.slider(
+        "Object-emphasis strength", 0.0, 0.5, 0.15, 0.025,
+        help="Increase this to make the selected ImageNet category more prominent; very high values can distort the scene.",
+    )
+    octave_count = st.slider("Image scales (octaves)", 2, 5, 3)
+    iterations = st.slider("Iterations per scale", 5, 50, 25, 5)
+    step_size = st.select_slider(
+        "Gradient-ascent step size", options=[0.001, 0.002, 0.003, 0.004, 0.005, 0.008], value=0.003
+    )
+    jitter = st.slider("Random image jitter", 0, 8, 4)
+    smoothing = st.slider("Gradient smoothing passes", 0, 3, 2)
+    tv_weight = st.slider(
+        "Smoothness regularization", 0.0, 0.02, 0.0025, 0.0025,
+        help="A mild value reduces tiny noisy textures while keeping learned patterns visible. Use 0 for no regularization.",
+    )
+    blend = st.slider("Blend with original image", 0.4, 1.0, 1.0, 0.05)
+    generate = st.button("Generate DeepDream", type="primary", use_container_width=True)
+
+if uploaded_file is None:
+    st.info("Upload a sky or cloud image. The default setting emphasizes bald-eagle features; choose a tower, church, or another category to change the object bias.")
+    st.markdown(
+        """
+**What makes object patterns stronger?**
+
+1. Higher-level Inception layers respond to more complex feature combinations.
+2. Focused-channel mode spends the update on a smaller set of strongly responding feature maps.
+3. Optional object guidance encourages a selected ImageNet class while the CNN layer continues to amplify visual patterns.
+4. Gradient ascent updates the **image pixels**, not the frozen CNN weights, at multiple image scales.
+"""
+    )
+    st.markdown(f"Background reading: [Google Research article]({GOOGLE_ARTICLE}) · [Google's archived code notebook]({GOOGLE_CODE})")
     st.stop()
 
-original_pil, original = read_image(uploaded)
-layer_idx = LAYERS[layer_name]
+original_pil, original_tensor = load_image(uploaded_file, int(max_side))
+layer_name = LAYER_NAMES[layer_label]
+target_class_index = CLASS_INDEX.get(target_label)
+focused_count = focused_channel_count if focus_mode.startswith("Focused") else None
 with torch.no_grad():
-    act = features_at(model, original, layer_idx)
-    n_channels, fh, fw = int(act.shape[1]), int(act.shape[2]), int(act.shape[3])
+    initial_features = get_activation(model, original_tensor, layer_name)
+    initial_shape = tuple(int(d) for d in initial_features.shape)
 
-with st.sidebar:
-    channel = st.number_input("Feature channel", min_value=0, max_value=n_channels-1,
-                              value=min(10, n_channels-1), step=1)
-    if target_mode == "Single spatial neuron":
-        row = st.number_input("Feature-map row", min_value=0, max_value=fh-1, value=fh//2, step=1)
-        col = st.number_input("Feature-map column", min_value=0, max_value=fw-1, value=fw//2, step=1)
-    else:
-        row, col = fh//2, fw//2
-
-st.caption(f"Device: {DEVICE} · Layer: {layer_name} · Feature map: {fh} × {fw} · Channels: {n_channels}")
-left, right = st.columns(2, gap="large")
-with left:
-    st.subheader("Original image")
+st.caption(
+    f"Device: {DEVICE} · Model: pretrained torchvision GoogLeNet · Layer: {layer_label} · "
+    f"Activation shape: {initial_shape[1]} channels × {initial_shape[2]} × {initial_shape[3]}"
+)
+left_col, right_col = st.columns(2, gap="large")
+with left_col:
+    st.subheader("Input image")
     st.image(original_pil, use_container_width=True)
-with right:
-    st.subheader("Deep Dream result")
-    if "dream_octave_result" in st.session_state:
-        st.image(st.session_state["dream_octave_result"], use_container_width=True)
+with right_col:
+    st.subheader("DeepDream output")
+    saved_result = st.session_state.get("deepdream_output")
+    if saved_result is not None:
+        st.image(saved_result, use_container_width=True)
     else:
         st.image(original_pil, use_container_width=True)
-        st.caption("Generate a result to compare it with the original.")
+        st.caption("The output will appear here after generation.")
 
-if run:
-    progress = st.progress(0.0)
-    status = st.empty()
+if generate:
+    progress_bar = st.progress(0.0)
+    status_area = st.empty()
     try:
-        result, history = optimize_octaves(
-            model, original, layer_idx, int(channel), target_mode, int(row), int(col),
-            int(octaves), int(steps_per_octave), float(step_size), float(tv_weight),
-            float(preserve_weight), float(dream_mix), progress, status
-        )
-        result_pil = to_pil(result)
-        st.session_state["dream_octave_result"] = result_pil
-        st.session_state["dream_octave_history"] = history
-        st.success("Multi-scale Deep Dream finished.")
+        with st.spinner("Amplifying high-level CNN patterns…"):
+            result, history, start_obj, end_obj, start_prob, end_prob = run_deepdream(
+                model=model,
+                original=original_tensor,
+                layer_name=layer_name,
+                octave_count=int(octave_count),
+                iterations_per_octave=int(iterations),
+                step_size=float(step_size),
+                jitter=int(jitter),
+                smoothing_passes=int(smoothing),
+                tv_weight=float(tv_weight),
+                blend=float(blend),
+                focused_channel_count=focused_count,
+                target_class_index=target_class_index,
+                class_guidance_strength=float(class_guidance_strength),
+                progress_bar=progress_bar,
+                status_area=status_area,
+            )
+        output_pil = tensor_to_pil(result)
+        st.session_state["deepdream_output"] = output_pil
+        st.session_state["deepdream_history"] = history
+        st.session_state["deepdream_start_obj"] = start_obj
+        st.session_state["deepdream_end_obj"] = end_obj
+        st.session_state["deepdream_start_prob"] = start_prob
+        st.session_state["deepdream_end_prob"] = end_prob
         st.rerun()
-    except Exception as exc:
-        st.error(f"Generation failed: {exc}")
-        st.exception(exc)
+    except Exception as error:
+        st.error(f"DeepDream generation failed: {error}")
+        st.exception(error)
 
-if "dream_octave_result" in st.session_state:
-    st.subheader("Optimization history")
-    history = st.session_state["dream_octave_history"]
-    st.line_chart(history.set_index("step")[["activation_objective", "total_variation", "preservation_loss"]])
-    c1, c2 = st.columns(2)
-    with c1:
-        st.download_button("Download generated image", png_bytes(st.session_state["dream_octave_result"]),
-                           file_name="deep_dream_result.png", mime="image/png")
-    with c2:
-        st.download_button("Download history (CSV)", history.to_csv(index=False).encode("utf-8"),
-                           file_name="deep_dream_history.csv", mime="text/csv")
-    with st.expander("Interpretation"):
-        st.write(
-            "Multi-scale optimization can reveal features at more than one spatial scale. "
-            "The original-image blend and regularization are intended to reduce extreme artifacts, "
-            "but DeepDream remains an activation-visualization method and may still produce artificial patterns."
+if "deepdream_history" in st.session_state:
+    st.subheader("Optimization diagnostics")
+    metric1, metric2, metric3 = st.columns(3)
+    metric1.metric("Initial feature objective", f"{st.session_state['deepdream_start_obj']:.5g}")
+    metric2.metric("Final feature objective", f"{st.session_state['deepdream_end_obj']:.5g}")
+    start_obj = float(st.session_state["deepdream_start_obj"])
+    end_obj = float(st.session_state["deepdream_end_obj"])
+    relative = (end_obj - start_obj) / max(abs(start_obj), 1e-8) * 100
+    metric3.metric("Feature-objective change", f"{relative:+.1f}%")
+    if st.session_state.get("deepdream_start_prob") is not None:
+        class_col1, class_col2 = st.columns(2)
+        class_col1.metric("Target class probability before", f"{100 * st.session_state['deepdream_start_prob']:.3f}%")
+        class_col2.metric("Target class probability after", f"{100 * st.session_state['deepdream_end_prob']:.3f}%")
+    history = st.session_state["deepdream_history"]
+    st.line_chart(history.set_index("iteration")[["feature_objective"]])
+    output = st.session_state["deepdream_output"]
+    dl_col1, dl_col2 = st.columns(2)
+    with dl_col1:
+        st.download_button(
+            "Download dreamed image", data=png_bytes(output),
+            file_name="deepdream_output.png", mime="image/png", use_container_width=True,
         )
+    with dl_col2:
+        st.download_button(
+            "Download iteration history (CSV)", data=history.to_csv(index=False).encode("utf-8"),
+            file_name="deepdream_history.csv", mime="text/csv", use_container_width=True,
+        )
+
+with st.expander("How this relates to Google's DeepDream"):
+    st.write(
+        "The class-free option follows the central DeepDream idea: maximize intermediate CNN "
+        "features by gradient ascent on input pixels and carry detail through multiple image scales. "
+        "The optional object selector is an extra class-guidance term that makes a chosen ImageNet "
+        "category more likely to appear. The model is torchvision's pretrained GoogLeNet, not Google's "
+        "exact historical checkpoint, so results will differ from the 2015 examples."
+    )
+    st.markdown(f"[Google Research article]({GOOGLE_ARTICLE}) · [Google's archived notebook]({GOOGLE_CODE})")
