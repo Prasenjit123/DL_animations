@@ -1,22 +1,28 @@
-# Deep Dream — corrected Streamlit app
+# Deep Dream — multi-scale Streamlit app
 
 ## Run locally
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
-
 The first run downloads pretrained AlexNet weights.
 
-## What was improved
-- Much more conservative default pixel update rate.
-- Stronger image-preservation and smoothness regularization.
-- Spatially smoothed, normalized image gradients to reduce high-frequency colour artifacts.
-- Lower default iteration count for a safer first run.
-- Generated image and history persist after Streamlit reruns.
-- Post-ReLU AlexNet feature maps are used for activation maximization.
+## Improvements over the previous version
+- Multi-scale/octave optimization rather than a single-resolution run.
+- Conservative pixel-update default and spatially smoothed gradients.
+- Smoothness and image-preservation penalties.
+- Final blend with the original image to retain scene structure.
+- Adjustable layer, channel, activation target, number of octaves, and steps per octave.
+- Downloads for the generated image and optimization history.
 
-## Recommended classroom settings
-Start with Conv3, Mean channel activation, 60–100 iterations, pixel update strength 0.001,
-smoothness 0.12, and preserve-original 0.50. Increase iterations gradually only after inspecting
-the result. Deep Dream intentionally amplifies CNN features; it does not guarantee photorealism.
+## Recommended starting settings
+- Layer: Conv3
+- Target: Mean channel activation
+- Image scales: 3
+- Steps per scale: 10–15
+- Pixel update strength: 0.0005
+- Smoothness: 0.10
+- Preserve image structure: 0.60
+- Dream effect strength: 0.45
+
+This should reduce excessive colour/swirling artifacts compared with single-scale aggressive optimization, but cannot guarantee the exact appearance of the original Google DeepDream examples.

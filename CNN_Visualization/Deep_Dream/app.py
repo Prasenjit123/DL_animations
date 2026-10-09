@@ -4,29 +4,27 @@ import pandas as pd
 import streamlit as st
 import torch
 import torch.nn.functional as F
-from PIL import Image
+from PIL import Image, ImageFilter
 from torchvision.models import alexnet, AlexNet_Weights
 
-st.set_page_config(page_title="Deep Dream — CNN Visualization", page_icon="🌀", layout="wide")
-
-st.title("Deep Dream: Enhance Features in an Existing Image")
+st.set_page_config(page_title="Deep Dream — Multi-scale", page_icon="🌀", layout="wide")
+st.title("Deep Dream: Multi-scale Feature Amplification")
 st.write(
-    "Amplify a selected AlexNet feature in a real image. The CNN weights stay fixed; "
-    "only image pixels are optimized."
+    "A classic DeepDream-style workflow: optimize at several image scales, use gentle "
+    "gradient-ascent steps, and retain the original image structure. AlexNet weights stay fixed."
 )
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MEAN = torch.tensor([0.485, 0.456, 0.406], device=DEVICE).view(1, 3, 1, 1)
 STD = torch.tensor([0.229, 0.224, 0.225], device=DEVICE).view(1, 3, 1, 1)
 
-# AlexNet feature sequence: Conv, ReLU, MaxPool, Conv, ReLU, MaxPool, ...
-# Use post-ReLU outputs to optimize non-negative feature activations.
-LAYER_MAP = {
-    "Conv1 — edges and colour contrasts": 1,
-    "Conv2 — simple textures": 4,
+# AlexNet feature indices after ReLU: non-negative activations.
+LAYERS = {
+    "Conv1 — edges / colour contrasts": 1,
+    "Conv2 — textures": 4,
     "Conv3 — patterns": 7,
     "Conv4 — complex patterns": 9,
-    "Conv5 — higher-level visual parts": 11,
+    "Conv5 — visual parts": 11,
 }
 
 @st.cache_resource
@@ -36,187 +34,218 @@ def load_model():
         p.requires_grad_(False)
     return model
 
-def load_image(file, max_side=320):
-    image = Image.open(file).convert("RGB")
-    scale = min(1.0, max_side / max(image.size))
+def read_image(file, max_side=384):
+    im = Image.open(file).convert("RGB")
+    scale = min(1.0, max_side / max(im.size))
     if scale < 1:
-        image = image.resize(
-            (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
-            Image.Resampling.LANCZOS,
-        )
-    arr = np.asarray(image).astype(np.float32) / 255.0
-    tensor = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0).to(DEVICE)
-    return image, tensor
+        im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), Image.Resampling.LANCZOS)
+    arr = np.asarray(im).astype(np.float32) / 255.0
+    ten = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0).to(DEVICE)
+    return im, ten
 
-def image_bytes(image):
+def to_pil(t):
+    arr = t.detach().clamp(0, 1)[0].permute(1, 2, 0).cpu().numpy()
+    return Image.fromarray((arr * 255).round().astype(np.uint8))
+
+def png_bytes(im):
     buf = io.BytesIO()
-    image.save(buf, format="PNG")
+    im.save(buf, format="PNG")
     return buf.getvalue()
 
-def extract_activation(model, image01, layer_index):
-    x = (image01 - MEAN) / STD
+def features_at(model, img01, layer_idx):
+    x = (img01 - MEAN) / STD
     for idx, layer in enumerate(model.features):
         x = layer(x)
-        if idx == layer_index:
+        if idx == layer_idx:
             return x
-    raise ValueError("Could not extract the requested AlexNet layer.")
+    raise RuntimeError("Target layer was not found.")
 
-def total_variation(image):
-    dy = image[:, :, 1:, :] - image[:, :, :-1, :]
-    dx = image[:, :, :, 1:] - image[:, :, :, :-1]
-    return dx.abs().mean() + dy.abs().mean()
+def variation(x):
+    return (x[:, :, 1:, :] - x[:, :, :-1, :]).abs().mean() + (x[:, :, :, 1:] - x[:, :, :, :-1]).abs().mean()
 
-def target_objective(activation, channel, mode, row, col):
-    channel_map = activation[:, channel, :, :]
+def objective_for(activation, channel, mode, row, col):
+    fmap = activation[:, channel]
     if mode == "Single spatial neuron":
-        yy = min(max(int(row), 0), channel_map.shape[1] - 1)
-        xx = min(max(int(col), 0), channel_map.shape[2] - 1)
-        value = channel_map[0, yy, xx]
-        return value.square(), value.detach().mean()
+        y = min(max(int(row), 0), fmap.shape[1] - 1)
+        x = min(max(int(col), 0), fmap.shape[2] - 1)
+        v = fmap[0, y, x]
+        return v.square()
     if mode == "Strongest spatial neuron":
-        value = channel_map.flatten().max()
-        return value.square(), value.detach()
-    return channel_map.square().mean(), channel_map.detach().mean()
+        return fmap.flatten().max().square()
+    # Mean squared activation rewards the selected channel over the spatial map.
+    return fmap.square().mean()
 
-def optimize_image(model, original, layer_index, channel, target_mode, row, col,
-                   steps, learning_rate, tv_weight, preserve_weight,
-                   progress, status):
-    # Keep pixels in RGB [0,1]. Use conservative, normalized updates to avoid
-    # rapid colour explosions and preserve the input's overall structure.
-    image = torch.nn.Parameter(original.clone())
-    optimizer = torch.optim.Adam([image], lr=learning_rate)
-    history = []
-    for step in range(steps):
-        optimizer.zero_grad(set_to_none=True)
-        bounded = image.clamp(0.0, 1.0)
-        activation = extract_activation(model, bounded, layer_index)
-        objective, mean_activation = target_objective(
-            activation, channel, target_mode, row, col
-        )
-        smoothness = total_variation(bounded)
-        preservation = (bounded - original).square().mean()
-        loss = -objective + tv_weight * smoothness + preserve_weight * preservation
-        loss.backward()
+def blur_tensor(x, sigma):
+    """Apply a mild Gaussian blur to gradients, suppressing pixel-scale noise."""
+    if sigma <= 0:
+        return x
+    # PIL blur is not differentiable, but this is applied to gradients only.
+    arr = x.detach().cpu().numpy()[0].transpose(1, 2, 0)
+    im = Image.fromarray(np.uint8(np.clip((arr - arr.min()) / (arr.max() - arr.min() + 1e-8), 0, 1) * 255))
+    im = im.filter(ImageFilter.GaussianBlur(radius=float(sigma)))
+    out = np.asarray(im).astype(np.float32) / 255.0
+    # Preserve the original gradient scale after blur.
+    out = (out - out.mean()) / (out.std() + 1e-8) * (x.detach().std().cpu().item() + 1e-8)
+    return torch.from_numpy(out.transpose(2, 0, 1)).unsqueeze(0).to(x.device, dtype=x.dtype)
 
-        # Smooth the pixel gradient spatially and normalize its scale. This
-        # reduces checkerboard/high-frequency colour artifacts.
-        with torch.no_grad():
-            if image.grad is not None:
-                grad = image.grad
-                grad = F.avg_pool2d(grad, kernel_size=3, stride=1, padding=1)
-                grad_scale = grad.abs().mean().clamp_min(1e-8)
-                image.grad.copy_(grad / grad_scale)
+def optimize_octaves(model, original, layer_idx, channel, target_mode, row, col,
+                     octaves, steps_per_octave, step_size, tv_weight,
+                     preserve_weight, dream_mix, progress, status):
+    # Multi-scale optimization: start at reduced resolution, then carry the
+    # residual into progressively larger scales, a common DeepDream technique.
+    _, _, H, W = original.shape
+    scales = np.linspace(0.55, 1.0, int(octaves))
+    current = F.interpolate(original, scale_factor=float(scales[0]), mode="bilinear", align_corners=False)
+    current = current.detach()
+    original_pyramid = [
+        F.interpolate(original, size=(max(32, round(H*s)), max(32, round(W*s))),
+                      mode="bilinear", align_corners=False)
+        for s in scales
+    ]
+    rows = []
+    total_steps = int(octaves) * int(steps_per_octave)
+    completed = 0
 
-        optimizer.step()
-        with torch.no_grad():
-            image.clamp_(0.0, 1.0)
+    for octave_idx, base in enumerate(original_pyramid):
+        if octave_idx == 0:
+            current = F.interpolate(current, size=base.shape[-2:], mode="bilinear", align_corners=False)
+        else:
+            # Preserve detail discovered at the previous scale, but softly blend
+            # with the original at this scale to prevent unbounded drift.
+            current = F.interpolate(current, size=base.shape[-2:], mode="bilinear", align_corners=False)
+            current = (0.82 * current + 0.18 * base).detach()
 
-        history.append({
-            "step": step + 1,
-            "objective": float(objective.detach().cpu()),
-            "mean_activation": float(mean_activation.detach().cpu()),
-            "total_variation": float(smoothness.detach().cpu()),
-            "preservation_loss": float(preservation.detach().cpu()),
-            "total_loss": float(loss.detach().cpu()),
-        })
-        if (step + 1) % max(1, steps // 40) == 0 or step == steps - 1:
-            progress.progress((step + 1) / steps)
-            status.caption(f"Optimizing image pixels: {step + 1}/{steps}")
+        image = torch.nn.Parameter(current.clone())
+        optimizer = torch.optim.Adam([image], lr=float(step_size))
+        for inner in range(int(steps_per_octave)):
+            optimizer.zero_grad(set_to_none=True)
+            bounded = image.clamp(0, 1)
+            act = features_at(model, bounded, layer_idx)
+            obj = objective_for(act, channel, target_mode, row, col)
+            smooth = variation(bounded)
+            preserve = (bounded - base).square().mean()
+            # Maximize activation while penalizing noise and large drift.
+            loss = -obj + float(tv_weight) * smooth + float(preserve_weight) * preserve
+            loss.backward()
 
-    return image.detach().clamp(0.0, 1.0), pd.DataFrame(history)
+            with torch.no_grad():
+                if image.grad is not None:
+                    grad = image.grad
+                    # Mild spatial gradient smoothing via average pooling.
+                    grad = F.avg_pool2d(grad, kernel_size=3, stride=1, padding=1)
+                    # Normalize conservatively; avoid the very large steps that
+                    # can cause rainbow colour explosions.
+                    scale = grad.abs().mean().clamp_min(1e-8)
+                    image.grad.copy_(grad / scale)
+
+            optimizer.step()
+            with torch.no_grad():
+                image.clamp_(0, 1)
+
+            completed += 1
+            rows.append({
+                "step": completed,
+                "octave": octave_idx + 1,
+                "activation_objective": float(obj.detach().cpu()),
+                "total_variation": float(smooth.detach().cpu()),
+                "preservation_loss": float(preserve.detach().cpu()),
+                "loss": float(loss.detach().cpu()),
+            })
+            if completed % max(1, total_steps // 40) == 0 or completed == total_steps:
+                progress.progress(completed / total_steps)
+                status.caption(f"Octave {octave_idx + 1}/{octaves} · step {inner + 1}/{steps_per_octave}")
+
+        current = image.detach().clamp(0, 1)
+
+    dreamed = F.interpolate(current, size=(H, W), mode="bilinear", align_corners=False)
+    # Final restrained blend: keep the original scene recognizable.
+    result = ((1.0 - float(dream_mix)) * original + float(dream_mix) * dreamed).clamp(0, 1)
+    return result, pd.DataFrame(rows)
 
 model = load_model()
-
 with st.sidebar:
     st.header("Experiment settings")
     uploaded = st.file_uploader("Upload a reference image", type=["png", "jpg", "jpeg", "webp"])
-    layer_name = st.selectbox("Target layer", list(LAYER_MAP.keys()), index=2)
-    target_mode = st.selectbox(
-        "Activation target",
-        ["Mean channel activation", "Strongest spatial neuron", "Single spatial neuron"],
-        help="Start with Mean channel activation for a more stable demonstration.",
-    )
-    steps = st.slider("Optimization iterations", 20, 400, 100, 20)
-    learning_rate = st.select_slider(
-        "Pixel update strength", options=[0.0002, 0.0005, 0.001, 0.002, 0.005],
-        value=0.001,
-    )
-    tv_weight = st.slider("Smoothness regularization", 0.0, 0.30, 0.12, 0.01)
-    preserve_weight = st.slider("Preserve original image", 0.01, 2.0, 0.50, 0.05)
+    layer_name = st.selectbox("Target layer", list(LAYERS.keys()), index=2)
+    target_mode = st.selectbox("Activation target",
+        ["Mean channel activation", "Strongest spatial neuron", "Single spatial neuron"])
+    octaves = st.slider("Image scales (octaves)", 2, 4, 3)
+    steps_per_octave = st.slider("Steps per scale", 5, 50, 15, 5)
+    step_size = st.select_slider("Pixel update strength",
+        options=[0.0001, 0.0002, 0.0005, 0.001, 0.002], value=0.0005)
+    tv_weight = st.slider("Smoothness regularization", 0.0, 0.30, 0.10, 0.01)
+    preserve_weight = st.slider("Preserve image structure", 0.05, 2.0, 0.60, 0.05)
+    dream_mix = st.slider("Dream effect strength", 0.10, 0.85, 0.45, 0.05)
     run = st.button("Generate Deep Dream", type="primary", use_container_width=True)
 
 if uploaded is None:
-    st.info("Upload an image to begin. Clouds, plants, buildings, and animal images work well.")
+    st.info("Upload a reference image to begin. Clouds, trees, buildings, and animals are useful examples.")
     st.markdown(
-        "**What happens?** The app selects an internal feature, computes its gradient with "
-        "respect to the input pixels, and makes small pixel updates that amplify the feature. "
-        "The pretrained model weights are never updated."
+        "**Method:** select a CNN feature, compute its gradient with respect to image pixels, "
+        "and amplify it across multiple image scales. The network weights remain fixed."
     )
     st.stop()
 
-original_pil, original = load_image(uploaded)
-layer_index = LAYER_MAP[layer_name]
+original_pil, original = read_image(uploaded)
+layer_idx = LAYERS[layer_name]
 with torch.no_grad():
-    fmap = extract_activation(model, original, layer_index)
-    channels, fmap_h, fmap_w = int(fmap.shape[1]), int(fmap.shape[2]), int(fmap.shape[3])
+    act = features_at(model, original, layer_idx)
+    n_channels, fh, fw = int(act.shape[1]), int(act.shape[2]), int(act.shape[3])
 
 with st.sidebar:
-    channel = st.number_input("Feature channel", min_value=0, max_value=channels - 1, value=min(10, channels - 1), step=1)
+    channel = st.number_input("Feature channel", min_value=0, max_value=n_channels-1,
+                              value=min(10, n_channels-1), step=1)
     if target_mode == "Single spatial neuron":
-        row = st.number_input("Feature-map row (y)", min_value=0, max_value=fmap_h - 1, value=fmap_h // 2, step=1)
-        col = st.number_input("Feature-map column (x)", min_value=0, max_value=fmap_w - 1, value=fmap_w // 2, step=1)
+        row = st.number_input("Feature-map row", min_value=0, max_value=fh-1, value=fh//2, step=1)
+        col = st.number_input("Feature-map column", min_value=0, max_value=fw-1, value=fw//2, step=1)
     else:
-        row, col = fmap_h // 2, fmap_w // 2
+        row, col = fh//2, fw//2
 
-st.caption(f"Device: {DEVICE} · Layer: {layer_name} · Feature map: {fmap_h} × {fmap_w} · Channels: {channels}")
-
+st.caption(f"Device: {DEVICE} · Layer: {layer_name} · Feature map: {fh} × {fw} · Channels: {n_channels}")
 left, right = st.columns(2, gap="large")
 with left:
     st.subheader("Original image")
     st.image(original_pil, use_container_width=True)
 with right:
     st.subheader("Deep Dream result")
-    if "dream_image" in st.session_state:
-        st.image(st.session_state["dream_image"], use_container_width=True)
+    if "dream_octave_result" in st.session_state:
+        st.image(st.session_state["dream_octave_result"], use_container_width=True)
     else:
         st.image(original_pil, use_container_width=True)
-        st.caption("Run the experiment to see the optimized result.")
+        st.caption("Generate a result to compare it with the original.")
 
 if run:
     progress = st.progress(0.0)
     status = st.empty()
     try:
-        result, history = optimize_image(
-            model, original, layer_index, int(channel), target_mode, int(row), int(col),
-            int(steps), float(learning_rate), float(tv_weight), float(preserve_weight),
-            progress, status,
+        result, history = optimize_octaves(
+            model, original, layer_idx, int(channel), target_mode, int(row), int(col),
+            int(octaves), int(steps_per_octave), float(step_size), float(tv_weight),
+            float(preserve_weight), float(dream_mix), progress, status
         )
-        result_pil = Image.fromarray(
-            (result[0].permute(1, 2, 0).cpu().numpy().clip(0, 1) * 255).round().astype(np.uint8)
-        )
-        st.session_state["dream_image"] = result_pil
-        st.session_state["dream_history"] = history
-        st.success("Optimization complete. Compare the result with the original image.")
+        result_pil = to_pil(result)
+        st.session_state["dream_octave_result"] = result_pil
+        st.session_state["dream_octave_history"] = history
+        st.success("Multi-scale Deep Dream finished.")
         st.rerun()
     except Exception as exc:
-        st.error(f"Deep Dream failed: {exc}")
+        st.error(f"Generation failed: {exc}")
         st.exception(exc)
 
-if "dream_image" in st.session_state:
+if "dream_octave_result" in st.session_state:
     st.subheader("Optimization history")
-    hist = st.session_state["dream_history"]
-    st.line_chart(hist.set_index("step")[["objective", "total_variation", "preservation_loss"]])
+    history = st.session_state["dream_octave_history"]
+    st.line_chart(history.set_index("step")[["activation_objective", "total_variation", "preservation_loss"]])
     c1, c2 = st.columns(2)
     with c1:
-        st.download_button("Download generated image", image_bytes(st.session_state["dream_image"]),
+        st.download_button("Download generated image", png_bytes(st.session_state["dream_octave_result"]),
                            file_name="deep_dream_result.png", mime="image/png")
     with c2:
-        st.download_button("Download history (CSV)", hist.to_csv(index=False).encode("utf-8"),
+        st.download_button("Download history (CSV)", history.to_csv(index=False).encode("utf-8"),
                            file_name="deep_dream_history.csv", mime="text/csv")
-    with st.expander("Interpretation and limitations"):
+    with st.expander("Interpretation"):
         st.write(
-            "A successful run increases the selected activation while regularization helps preserve "
-            "image structure. Some feature amplification is expected, but strong psychedelic colours "
-            "or repeated texture can indicate an aggressive objective. Deep Dream is a visualization "
-            "of learned feature preferences, not a guaranteed realistic enhancement."
+            "Multi-scale optimization can reveal features at more than one spatial scale. "
+            "The original-image blend and regularization are intended to reduce extreme artifacts, "
+            "but DeepDream remains an activation-visualization method and may still produce artificial patterns."
         )
