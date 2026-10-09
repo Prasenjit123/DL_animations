@@ -27,8 +27,8 @@ LAYER_NAMES = {
     "Inception 3b — repeated motifs": "inception3b",
     "Inception 4a — object parts": "inception4a",
     "Inception 4b — object parts": "inception4b",
-    "Inception 4c — classic DeepDream layer": "inception4c",
-    "Inception 4d — complex patterns": "inception4d",
+    "Inception 4c — classic face-like motifs": "inception4c",
+    "Inception 4d — animal parts and complex motifs": "inception4d",
     "Inception 4e — high-level object patterns": "inception4e",
     "Inception 5a — high-level patterns": "inception5a",
     "Inception 5b — high-level patterns": "inception5b",
@@ -61,8 +61,8 @@ st.set_page_config(page_title="CNN DeepDream Lab", page_icon="🌌", layout="wid
 st.title("CNN DeepDream Lab")
 st.write(
     "Upload a real image and let a pretrained CNN amplify patterns it detects. "
-    "For more recognizable forms, focus on higher-level features or guide the dream "
-    "toward an ImageNet object such as a bird or a church tower."
+    "The defaults emphasize detailed, bird-like patterns using Inception 4d and bald-eagle guidance. "
+    "Choose the class-free option whenever you want to demonstrate unguided, classic DeepDream."
 )
 
 
@@ -136,19 +136,22 @@ def feature_objective(
     activation: torch.Tensor,
     focused_channels: torch.Tensor | None,
 ) -> torch.Tensor:
-    """Amplify layer features, with optional focus on the most active channels."""
+    """Amplify strongly responding features across the selected layer.
+
+    Squared activation restores the stronger, motif-rich behaviour of the earlier
+    version. By default every channel participates, as in classic layer-wide
+    DeepDream; focusing on a subset is an optional experiment.
+    """
     if focused_channels is not None:
         activation = activation.index_select(1, focused_channels)
-    # The linear term encourages broad feature response; the quadratic term
-    # gives the already-strong patterns more influence without relying on it alone.
-    return activation.mean() + 0.25 * activation.square().mean()
+    return activation.square().mean()
 
 
 def smooth_gradient(gradient: torch.Tensor, passes: int) -> torch.Tensor:
     """Low-pass smooth the update so it does not overemphasize pixel-scale noise."""
     result = gradient
     for _ in range(int(passes)):
-        result = F.avg_pool2d(result, kernel_size=5, stride=1, padding=2)
+        result = F.avg_pool2d(result, kernel_size=3, stride=1, padding=1)
     return result
 
 
@@ -229,23 +232,42 @@ def run_deepdream(
 
             activation, logits = forward_with_activation(model, shifted_image.clamp(0.0, 1.0), layer_name)
             feature_score = feature_objective(activation, focused_channels)
-            objective = feature_score
             target_probability = None
+            target_log_probability = None
             if target_class_index is not None:
-                # Log-probability pushes the selected class relative to competing classes.
+                # Optional class guidance is handled as a separate normalized gradient.
+                # This makes the slider meaningful even when classifier and layer-loss
+                # gradients have very different raw magnitudes.
                 target_log_probability = F.log_softmax(logits, dim=1)[0, target_class_index]
-                objective = objective + float(class_guidance_strength) * target_log_probability
                 target_probability = float(torch.softmax(logits.detach(), dim=1)[0, target_class_index].cpu())
 
-            smoothness = total_variation(shifted_image.clamp(0.0, 1.0))
-            # IMPORTANT: this is gradient ASCENT on the feature/class objective.
-            # Adding the gradient of -objective (as in the previous version) reverses
-            # the sign and suppresses features instead of amplifying them.
-            optimization_objective = objective - float(tv_weight) * smoothness
-            optimization_objective.backward()
+            bounded_shifted = shifted_image.clamp(0.0, 1.0)
+            smoothness = total_variation(bounded_shifted)
+            need_class_gradient = target_log_probability is not None
+            need_tv_gradient = float(tv_weight) > 0.0
+
+            # Normalize the feature gradient independently so a class gradient or a
+            # smoothing term cannot silently dominate it just because of scale.
+            feature_gradient = torch.autograd.grad(
+                feature_score, image, retain_graph=(need_class_gradient or need_tv_gradient)
+            )[0]
+            feature_gradient = feature_gradient / feature_gradient.abs().mean().clamp_min(1e-8)
+            gradient = feature_gradient
+
+            if target_log_probability is not None:
+                class_gradient = torch.autograd.grad(
+                    target_log_probability, image, retain_graph=need_tv_gradient
+                )[0]
+                class_gradient = class_gradient / class_gradient.abs().mean().clamp_min(1e-8)
+                gradient = gradient + float(class_guidance_strength) * class_gradient
+
+            if need_tv_gradient:
+                tv_gradient = torch.autograd.grad(smoothness, image)[0]
+                tv_gradient = tv_gradient / tv_gradient.abs().mean().clamp_min(1e-8)
+                gradient = gradient - float(tv_weight) * tv_gradient
 
             with torch.no_grad():
-                gradient = smooth_gradient(image.grad, smoothing_passes)
+                gradient = smooth_gradient(gradient, smoothing_passes)
                 gradient_scale = gradient.abs().mean().clamp_min(1e-8)
                 image.add_(float(step_size) * gradient / gradient_scale)
                 image.clamp_(0.0, 1.0)
@@ -290,47 +312,52 @@ with st.sidebar:
     max_side = st.select_slider(
         "Maximum image dimension (pixels)", options=[192, 256, 320, 384, 512, 640], value=512
     )
-    layer_label = st.selectbox("Feature layer", list(LAYER_NAMES.keys()), index=6)
+    layer_label = st.selectbox("Feature layer", list(LAYER_NAMES.keys()), index=5)
     focus_mode = st.selectbox(
         "Feature emphasis",
-        ["Focused channels (stronger motifs)", "Broad layer exploration"],
+        ["All layer activations (classic DeepDream)", "Focused channels (selective motifs)"],
         index=0,
-        help="Focused mode amplifies the channels that respond most strongly to the input image.",
+        help="Classic mode combines all channels in the selected layer. Focused mode uses the most active channels from the input image.",
     )
     focused_channel_count = st.slider("Channels to emphasize", 8, 64, 24, 8)
     object_options = ["No specific object — classic DeepDream"] + [label for label, _ in CLASS_PRESETS]
+    # The default matches the recommended sky-image setup. The class-free option
+    # remains available at the top of the list for the original unguided experiment.
+    default_target_index = next(
+        (i for i, label in enumerate(object_options) if label == "Bird — bald eagle"), 0
+    )
     target_label = st.selectbox(
-        "Object to emphasize (optional)", object_options, index=1,
-        help="Object guidance adds a classifier objective. This is a guided extension, not the original class-free DeepDream objective.",
+        "Object to emphasize (optional)", object_options, index=default_target_index,
+        help="Defaults to bald eagle to make bird-like patterns more likely. Select the first option for class-free DeepDream.",
     )
     class_guidance_strength = st.slider(
-        "Object-emphasis strength", 0.0, 0.5, 0.15, 0.025,
-        help="Increase this to make the selected ImageNet category more prominent; very high values can distort the scene.",
+        "Object-emphasis strength", 0.0, 3.0, 1.5, 0.25,
+        help="Used only when an object is selected. Higher values bias the patterns toward that ImageNet class and may distort the original scene.",
     )
-    octave_count = st.slider("Image scales (octaves)", 2, 5, 3)
-    iterations = st.slider("Iterations per scale", 5, 50, 25, 5)
+    octave_count = st.slider("Image scales (octaves)", 2, 5, 4)
+    iterations = st.slider("Iterations per scale", 5, 60, 30, 5)
     step_size = st.select_slider(
-        "Gradient-ascent step size", options=[0.001, 0.002, 0.003, 0.004, 0.005, 0.008], value=0.003
+        "Gradient-ascent step size", options=[0.001, 0.002, 0.003, 0.005, 0.008, 0.01, 0.015, 0.02], value=0.01
     )
-    jitter = st.slider("Random image jitter", 0, 8, 4)
-    smoothing = st.slider("Gradient smoothing passes", 0, 3, 2)
+    jitter = st.slider("Random image jitter", 0, 12, 4)
+    smoothing = st.slider("Gradient smoothing passes", 0, 3, 1)
     tv_weight = st.slider(
-        "Smoothness regularization", 0.0, 0.02, 0.0025, 0.0025,
-        help="A mild value reduces tiny noisy textures while keeping learned patterns visible. Use 0 for no regularization.",
+        "Smoothness regularization", 0.0, 0.05, 0.0, 0.005,
+        help="Use 0 for the vivid classic DeepDream appearance. Increase slightly only if the result becomes too noisy.",
     )
     blend = st.slider("Blend with original image", 0.4, 1.0, 1.0, 0.05)
     generate = st.button("Generate DeepDream", type="primary", use_container_width=True)
 
 if uploaded_file is None:
-    st.info("Upload a sky or cloud image. The default setting emphasizes bald-eagle features; choose a tower, church, or another category to change the object bias.")
+    st.info("Upload a sky or cloud image. Defaults are Inception 4d, all layer activations, bald-eagle guidance (strength 1.5), four scales, 30 iterations per scale, step size 0.01, one smoothing pass, no smoothness regularization, and full-strength output. Select the first object option for class-free DeepDream.")
     st.markdown(
         """
 **What makes object patterns stronger?**
 
-1. Higher-level Inception layers respond to more complex feature combinations.
-2. Focused-channel mode spends the update on a smaller set of strongly responding feature maps.
-3. Optional object guidance encourages a selected ImageNet class while the CNN layer continues to amplify visual patterns.
-4. Gradient ascent updates the **image pixels**, not the frozen CNN weights, at multiple image scales.
+1. Inception 4c and 4d often give a more detailed, motif-rich look than the most abstract 5b layer.
+2. Classic mode maximizes squared activations across the whole layer; no single neuron is selected.
+3. Optional object guidance adds a separately normalized classifier gradient toward a selected ImageNet category.
+4. Gradient ascent updates the **image pixels**, not the frozen CNN weights, across multiple image scales.
 """
     )
     st.markdown(f"Background reading: [Google Research article]({GOOGLE_ARTICLE}) · [Google's archived code notebook]({GOOGLE_CODE})")
@@ -425,10 +452,10 @@ if "deepdream_history" in st.session_state:
 
 with st.expander("How this relates to Google's DeepDream"):
     st.write(
-        "The class-free option follows the central DeepDream idea: maximize intermediate CNN "
-        "features by gradient ascent on input pixels and carry detail through multiple image scales. "
-        "The optional object selector is an extra class-guidance term that makes a chosen ImageNet "
-        "category more likely to appear. The model is torchvision's pretrained GoogLeNet, not Google's "
-        "exact historical checkpoint, so results will differ from the 2015 examples."
+        "The default now follows classic layer-wide DeepDream more closely: it maximizes squared "
+        "intermediate activations by gradient ascent on input pixels, carries detail across image scales, "
+        "and applies minimal smoothing. The optional object selector is a separate guided extension. "
+        "The model is torchvision's pretrained GoogLeNet rather than Google's exact historical checkpoint, "
+        "so results can still differ from the 2015 examples."
     )
     st.markdown(f"[Google Research article]({GOOGLE_ARTICLE}) · [Google's archived notebook]({GOOGLE_CODE})")

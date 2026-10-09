@@ -1,42 +1,23 @@
-# CNN DeepDream Lab (PyTorch + Streamlit)
+# CNN DeepDream Lab — detailed-motif edition
 
-A runnable educational implementation of multi-octave DeepDream with an optional **object-emphasis** mode. It uses pretrained torchvision GoogLeNet, freezes the network weights, and updates image pixels with gradient ascent.
+A Streamlit application for exploring class-free DeepDream and optional class-guided dreaming on a real input image. It uses pretrained torchvision GoogLeNet/ImageNet weights, keeps model parameters frozen, and applies gradient ascent to the input pixels.
 
-## Run locally
+## Run
 
 ```bash
 python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The first run downloads pretrained GoogLeNet weights, so an internet connection is required once. CUDA is used automatically when available; CPU also works but is slower.
+The pretrained GoogLeNet weights download the first time the app starts. A CUDA-enabled PyTorch installation is recommended for faster experiments; CPU works but can be slow.
 
-## Suggested settings for a sky/cloud image
+## Settings for detailed, object-like patterns
 
-- Feature layer: **Inception 4e** or **Inception 5a**
-- Feature emphasis: **Focused channels (stronger motifs)**
-- Object to emphasize: **Bird — bald eagle** (or choose a bird, church/tower, castle, etc.)
-- Object-emphasis strength: **0.10–0.20**
-- Image dimension: **512**
-- Image scales: **3**
-- Iterations per scale: **25–35**
-- Gradient-ascent step size: **0.002–0.004**
-- Gradient smoothing: **2**
-- Smoothness regularization: **0.0025**
-- Blend with original image: **0.9–1.0**
+- Start at **Inception 4d**; also compare Inception 4c and 4e. The 5a/5b layers can look coarser or more abstract.
+- Start with 4 image scales, 30 iterations per scale, step size 0.01, one gradient-smoothing pass, and smoothness regularization 0.
+- The app now defaults to **Bird — bald eagle** with guidance strength **1.5** to bias patterns toward bird-like forms. Select **No specific object — classic DeepDream** to switch back to class-free amplification; guidance is an optional extension, not part of the original class-free method.
+- If the output becomes too noisy, enable one more smoothing pass or use a small smoothness regularization value.
 
-For an unconditioned version, select **No specific object — classic DeepDream**. Object-guidance is an optional extension that encourages a specific ImageNet class; it is not part of the class-free original objective.
+## Important limitation
 
-## Algorithm outline
-
-1. Build a multi-scale image pyramid and start at the smallest scale.
-2. Maximize selected Inception-layer activations by **gradient ascent on the input pixels**. The network's parameters stay frozen.
-3. Optionally focus on the channels that respond most strongly to the uploaded image.
-4. Optionally add a classifier log-probability term for a selected ImageNet category to make a particular kind of object more prominent.
-5. Upscale the learned detail residual across octaves, then blend and save the result.
-
-The current torchvision GoogLeNet model is not Google's exact historical internal checkpoint, so outputs will differ from the 2015 images.
-
-References:
-- https://research.google/blog/inceptionism-going-deeper-into-neural-networks/
-- https://github.com/google/deepdream
+DeepDream amplifies features the model responds to; it does not guarantee a fully recognizable object from every image. The optional class guidance can bias feature changes toward a category but is not a text-to-image generator. The model is torchvision's pretrained GoogLeNet, not Google's original historical checkpoint, so outputs will differ from the 2015 examples.
